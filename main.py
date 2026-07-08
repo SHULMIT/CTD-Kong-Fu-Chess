@@ -3,8 +3,8 @@
 import sys
 # URL: https://github.com/your-username/kong-fu-chess-repo
 
-from io.text_board_parser import TextBoardParser
-from io.text_board_formatter import TextBoardFormatter
+from board_io.text_board_parser import TextBoardParser
+from board_io.text_board_formatter import TextBoardFormatter
 from core.game import Game
 
 def _parse_input_sections(input_lines):

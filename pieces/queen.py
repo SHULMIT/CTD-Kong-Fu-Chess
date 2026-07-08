@@ -1,7 +1,8 @@
 # pieces/queen.py
 """
-מלכה — משלבת את יכולות הצריח והרץ:
-  יכולה לזוז בקו ישר (אופקי/אנכי) או באלכסון, כמה משבצות שרוצה.
+Queen — combines Rook and Bishop movement.
+Can move any number of squares in a straight line or diagonally.
+Cannot jump over pieces. Cannot capture a friendly piece.
 """
 
 from pieces.piece import Piece
@@ -12,16 +13,12 @@ from pieces.bishop import Bishop
 class Queen(Piece):
 
     def __init__(self):
-        # מלכה = צריח + רץ, משתמשים בהם ישירות
         self._rook = Rook()
         self._bishop = Bishop()
 
-    def can_move(self, from_pos, to_pos):
-        """
-        תנועה חוקית אם חוקית לצריח OR חוקית לרץ.
-        """
+    def can_move(self, from_pos, to_pos, board):
         return (
-            self._rook.can_move(from_pos, to_pos)
+            self._rook.can_move(from_pos, to_pos, board)
             or
-            self._bishop.can_move(from_pos, to_pos)
+            self._bishop.can_move(from_pos, to_pos, board)
         )

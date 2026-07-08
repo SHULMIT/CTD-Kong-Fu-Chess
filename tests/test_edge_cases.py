@@ -9,8 +9,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from core.board import Board
 from core.game import Game
 from core.position import Position
-from io.text_board_parser import TextBoardParser
-from io.text_board_formatter import TextBoardFormatter
+from board_io.text_board_parser import TextBoardParser
+from board_io.text_board_formatter import TextBoardFormatter
 from config.constants import EMPTY_SQUARE
 
 
@@ -205,7 +205,7 @@ class TestGameEdgeCases(unittest.TestCase):
 
     # בדיקה: לחיצה כפולה על אותו כלי — נשאר נבחר (לא מתבטל).
     def test_click_same_piece_twice_keeps_selection(self):
-        grid = [["wP", EMPTY_SQUARE]]
+        grid = [["wK", EMPTY_SQUARE]]
         game = make_game(grid)
         game.click(0, 0)
         game.click(0, 0)
@@ -229,26 +229,29 @@ class TestGameEdgeCases(unittest.TestCase):
 
     # בדיקה: הזזת כלי לא מוחקת כלים אחרים בלוח.
     def test_move_does_not_disturb_other_pieces(self):
-        grid = [["wP", EMPTY_SQUARE, "bK"]]
+        grid = [["wK", EMPTY_SQUARE, "bR"]]
         game = make_game(grid)
-        game.click(0, 0)   # בוחרת wP
-        game.click(100, 0) # זזה ימינה
-        self.assertEqual(game.board.get_piece(Position(0, 2)), "bK")
+        game.click(0, 0)    # בוחרת wK
+        game.click(100, 0)  # זזה ימינה (חוקי למלך — משבצת אחת)
+        game.wait(1000)
+        self.assertEqual(game.board.get_piece(Position(0, 2)), "bR")
 
     # בדיקה: לאחר אכילת כלי יריב, הלוח מכיל את הכלי התוקף במיקום היעד.
     def test_after_capture_attacker_is_at_target(self):
-        grid = [["wP", "bP"]]
+        grid = [["wK", "bR"]]
         game = make_game(grid)
         game.click(0, 0)
         game.click(100, 0)
-        self.assertEqual(game.board.get_piece(Position(0, 1)), "wP")
+        game.wait(1000)
+        self.assertEqual(game.board.get_piece(Position(0, 1)), "wK")
 
     # בדיקה: לאחר אכילת כלי יריב, מיקום המקור הופך ריק.
     def test_after_capture_source_is_empty(self):
-        grid = [["wP", "bP"]]
+        grid = [["wK", "bR"]]
         game = make_game(grid)
         game.click(0, 0)
         game.click(100, 0)
+        game.wait(1000)
         self.assertEqual(game.board.get_piece(Position(0, 0)), EMPTY_SQUARE)
 
 

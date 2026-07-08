@@ -57,59 +57,79 @@ class TestGameClick(unittest.TestCase):
 
     # בדיקה: לחיצה על משבצת ריקה לא בוחרת כלום.
     def test_click_empty_square_does_not_select(self):
-        grid = [[EMPTY_SQUARE, "wP"]]
+        grid = [[EMPTY_SQUARE, "wK"]]
         game = make_game(grid)
-        game.click(0, 0)   # עמודה 0, שורה 0 — ריק
+        game.click(0, 0)
         self.assertIsNone(game.selected_position)
 
     # בדיקה: לחיצה על כלי בוחרת אותו.
     def test_click_piece_selects_it(self):
-        grid = [[EMPTY_SQUARE, "wP"]]
+        grid = [[EMPTY_SQUARE, "wK"]]
         game = make_game(grid)
-        game.click(100, 0)  # עמודה 1, שורה 0 — "wP"
+        game.click(100, 0)
         self.assertEqual(game.selected_position, Position(0, 1))
 
     # בדיקה: לחיצה מחוץ לגבולות הלוח לא זורקת שגיאה ולא משנה מצב.
     def test_click_outside_board_is_ignored(self):
-        grid = [["wP"]]
+        grid = [["wK"]]
         game = make_game(grid)
-        game.click(500, 500)  # הרבה מחוץ ללוח 1x1
+        game.click(500, 500)
         self.assertIsNone(game.selected_position)
 
     # בדיקה: לחיצה על כלי שני מאחר שנבחר כלי ראשון — מחליפה את הבחירה.
     def test_click_own_piece_switches_selection(self):
-        grid = [["wP", "wR"]]
+        grid = [["wK", "wR"]]
         game = make_game(grid)
-        game.click(0, 0)    # בוחרת wP
-        game.click(100, 0)  # מחליפה לwR
+        game.click(0, 0)    # בוחרת wK
+        game.click(100, 0)  # מחליפה ל-wR
         self.assertEqual(game.selected_position, Position(0, 1))
 
-    # בדיקה: לחיצה על משבצת ריקה אחרי בחירה — מזיזה את הכלי.
-    # משתמשים ב-wR (צריח) כי הוא מממש can_move ויכול לזוז אופקית.
-    def test_click_empty_after_selection_moves_piece(self):
-        grid = [["wR", EMPTY_SQUARE]]
-        game = make_game(grid)
-        game.click(0, 0)    # בוחרת wR
-        game.click(100, 0)  # זזה משבצת ימינה (תנועה אופקית — חוקית לצריח)
-        self.assertEqual(game.board.get_piece(Position(0, 1)), "wR")
-        self.assertEqual(game.board.get_piece(Position(0, 0)), EMPTY_SQUARE)
-
-    # בדיקה: אחרי הזזה חוקית, selection מתאפס.
-    def test_selection_cleared_after_move(self):
-        grid = [["wR", EMPTY_SQUARE]]
+    # בדיקה: אחרי click תקין, הכלי עדיין לא זז — רק אחרי wait.
+    def test_piece_does_not_move_before_wait(self):
+        grid = [["wK", EMPTY_SQUARE]]
         game = make_game(grid)
         game.click(0, 0)
         game.click(100, 0)
+        # לפני wait — הכלי עדיין במקורו
+        self.assertEqual(game.board.get_piece(Position(0, 0)), "wK")
+
+    # בדיקה: אחרי wait, הכלי עובר ליעד.
+    def test_piece_moves_after_wait(self):
+        grid = [["wK", EMPTY_SQUARE]]
+        game = make_game(grid)
+        game.click(0, 0)
+        game.click(100, 0)
+        game.wait(1000)
+        self.assertEqual(game.board.get_piece(Position(0, 1)), "wK")
+        self.assertEqual(game.board.get_piece(Position(0, 0)), EMPTY_SQUARE)
+
+    # בדיקה: אחרי wait ובצוע הזזה, selected_position מתאפס.
+    def test_selection_cleared_after_wait_and_move(self):
+        grid = [["wK", EMPTY_SQUARE]]
+        game = make_game(grid)
+        game.click(0, 0)
+        game.click(100, 0)
+        game.wait(1000)
         self.assertIsNone(game.selected_position)
 
-    # בדיקה: לחיצה על כלי יריב אחרי בחירה — אוכל אותו (מזיז לתוכו).
-    # משתמשים ב-wR שיוכל לאכול את bR אופקית (תנועה חוקית לצריח).
-    def test_click_enemy_piece_captures_it(self):
-        grid = [["wR", "bR"]]
+    # בדיקה: תנועה לא חוקית — הכלי לא זז גם אחרי wait.
+    def test_invalid_move_does_not_execute_after_wait(self):
+        # מלך לא יכול לזוז שתי משבצות
+        grid = [["wK", EMPTY_SQUARE, EMPTY_SQUARE]]
         game = make_game(grid)
-        game.click(0, 0)    # בוחרת wR
-        game.click(100, 0)  # אוכלת bR (תנועה אופקית — חוקית)
-        self.assertEqual(game.board.get_piece(Position(0, 1)), "wR")
+        game.click(0, 0)
+        game.click(200, 0)  # שתי משבצות — לא חוקי למלך
+        game.wait(1000)
+        self.assertEqual(game.board.get_piece(Position(0, 0)), "wK")
+
+    # בדיקה: אכילת כלי יריב — אחרי wait, התוקף ביעד והמקור ריק.
+    def test_capture_executes_after_wait(self):
+        grid = [["wK", "bR"]]
+        game = make_game(grid)
+        game.click(0, 0)
+        game.click(100, 0)
+        game.wait(1000)
+        self.assertEqual(game.board.get_piece(Position(0, 1)), "wK")
         self.assertEqual(game.board.get_piece(Position(0, 0)), EMPTY_SQUARE)
 
 
@@ -121,17 +141,24 @@ class TestGameWait(unittest.TestCase):
 
     # בדיקה: wait מקדם את שעון המשחק.
     def test_wait_advances_clock(self):
-        grid = [["wP"]]
+        grid = [["wK"]]
         game = make_game(grid)
         game.wait(300)
         self.assertEqual(game.clock.current_time, 300)
 
     # בדיקה: wait עם ערך שלילי זורק ValueError.
     def test_wait_negative_raises(self):
-        grid = [["wP"]]
+        grid = [["wK"]]
         game = make_game(grid)
         with self.assertRaises(ValueError):
             game.wait(-50)
+
+    # בדיקה: wait ללא מהלך ממתין לא גורם לשגיאה.
+    def test_wait_without_pending_move_is_safe(self):
+        grid = [["wK"]]
+        game = make_game(grid)
+        game.wait(500)
+        self.assertEqual(game.clock.current_time, 500)
 
 
 if __name__ == "__main__":

@@ -1,22 +1,24 @@
 # pieces/knight.py
 """
-פרש — הכלי היחיד שקופץ מעל כלים אחרים.
-תנועתו בצורת L: שתי משבצות בציר אחד ומשבצת אחת בציר הניצב.
+Knight — moves in an L-shape (2+1 or 1+2 squares).
+Can jump over other pieces. Cannot capture a friendly piece.
 """
 
-from pieces.piece import Piece
+from pieces.piece import Piece, _is_friendly_capture
 
 
 class Knight(Piece):
 
-    def can_move(self, from_pos, to_pos):
-        """
-        חוקי תנועת פרש:
-          אפשרויות L: (±2, ±1) או (±1, ±2)
-          כלומר: מכפלת ההפרשים = 2  (אחד הפרש 1 והשני הפרש 2)
-        """
+    def can_move(self, from_pos, to_pos, board):
         row_diff = abs(to_pos.row - from_pos.row)
         col_diff = abs(to_pos.column - from_pos.column)
 
-        # תנועת L: ההפרשים הם בדיוק 1 ו-2 (בסדר כלשהו)
-        return sorted([row_diff, col_diff]) == [1, 2]
+        # L-shape: differences must be exactly 1 and 2 in some order
+        if sorted([row_diff, col_diff]) != [1, 2]:
+            return False
+
+        # Cannot land on a friendly piece (but can jump over anything)
+        if _is_friendly_capture(from_pos, to_pos, board):
+            return False
+
+        return True

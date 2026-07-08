@@ -10,8 +10,8 @@ from core.board import Board
 from core.position import Position
 import importlib.util
 
-PARSER_PATH = PROJECT_ROOT / "io" / "text_board_parser.py"
-FORMATTER_PATH = PROJECT_ROOT / "io" / "text_board_formatter.py"
+PARSER_PATH = PROJECT_ROOT / "board_io" / "text_board_parser.py"
+FORMATTER_PATH = PROJECT_ROOT / "board_io" / "text_board_formatter.py"
 
 spec_parser = importlib.util.spec_from_file_location("text_board_parser", PARSER_PATH)
 text_board_parser = importlib.util.module_from_spec(spec_parser)

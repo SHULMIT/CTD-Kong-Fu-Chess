@@ -2,7 +2,9 @@ import importlib.util
 import os
 import sys
 
-PROJECT_ROOT = os.path.dirname(__file__)
+# PROJECT_ROOT הוא תיקיית הריצה (sys.path[0]) — לא תיקיית הקובץ הזה,
+# כי הקובץ הזה מועתק ל-site-packages אבל הפרויקט נמצא איפשהו אחר.
+PROJECT_ROOT = sys.path[0] if sys.path else os.getcwd()
 IO_PACKAGE_DIR = os.path.join(PROJECT_ROOT, "io")
 IO_INIT_FILE = os.path.join(IO_PACKAGE_DIR, "__init__.py")
 
