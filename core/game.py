@@ -13,18 +13,28 @@ from core.clock import Clock
 from pieces.piece import piece_from_code
 
 
+def _move_duration_ms(from_pos, to_pos):
+    """Returns the time needed for a move based on the board distance."""
+    distance = max(abs(to_pos.row - from_pos.row), abs(to_pos.column - from_pos.column))
+    return distance * 1000
+
+
 class Game:
     def __init__(self, board):
         self.board = board
         self.clock = Clock()
         self.selected_position = None
-        self._pending_move = None  # (from_pos, to_pos, piece_code) ממתין לביצוע ב-wait
+        self._pending_move = None  # (from_pos, to_pos, piece_code) ממתין להתחלה
+        self._active_move = None  # {'from_pos':..., 'to_pos':..., 'piece':..., 'remaining_time_ms':...}
 
     def click(self, x, y):
         """
         מטפלת בלחיצה בקואורדינטות פיקסלים.
         ממירה לתא בלוח (כל תא = 100 פיקסלים) ומנתבת לפעולה המתאימה.
         """
+        if self._active_move is not None:
+            return
+
         col = x // 100
         row = y // 100
         pos = Position(row, col)
@@ -69,7 +79,7 @@ class Game:
     def _queue_move(self, target_pos, piece):
         """
         בודק חוקיות התנועה — אם חוקית, שומר אותה כ-pending.
-        המהלך יתבצע בפועל רק ב-wait().
+        המהלך יתחיל רק כשהזמן יתקדם ב-wait().
         """
         piece_obj = piece_from_code(piece)
 
@@ -83,24 +93,56 @@ class Game:
             self.selected_position = None
             return
 
-        # תנועה חוקית — שומרים כממתין
+        # תנועה חוקית — שומרים כממתין להתחלה
         self._pending_move = (self.selected_position, target_pos, piece)
         self.selected_position = None
 
-    def _execute_pending_move(self):
-        """מבצע את המהלך הממתין על הלוח, אם קיים."""
+    def _start_pending_move(self):
+        """Start a queued move and begin its elapsed-time tracking."""
         if self._pending_move is None:
             return
 
         from_pos, to_pos, piece = self._pending_move
+        duration_ms = _move_duration_ms(from_pos, to_pos)
+        self._active_move = {
+            "from_pos": from_pos,
+            "to_pos": to_pos,
+            "piece": piece,
+            "remaining_time_ms": duration_ms,
+        }
+        self._pending_move = None
+
+    def _advance_active_move(self, ms):
+        """Advance an in-progress move and apply it once its travel time is exhausted."""
+        if self._active_move is None:
+            return
+
+        self._active_move["remaining_time_ms"] -= ms
+        if self._active_move["remaining_time_ms"] <= 0:
+            self._apply_move(
+                self._active_move["from_pos"],
+                self._active_move["to_pos"],
+                self._active_move["piece"],
+            )
+            self._active_move = None
+
+    def _apply_move(self, from_pos, to_pos, piece):
+        """Apply a completed move to the board."""
         self.board.set_piece(to_pos, piece)
         self.board.set_piece(from_pos, Board.EMPTY_CELL)
-        self._pending_move = None
 
     def wait(self, ms):
         """
         מקדם את שעון המשחק ב-ms מילישניות
-        ומבצע את המהלך הממתין (אם קיים).
+        ומתקדם את התנועה הממתינה אם יש.
         """
+        if ms < 0:
+            raise ValueError("wait time cannot be negative")
+
         self.clock.tick(ms)
-        self._execute_pending_move()
+
+        if self._active_move is None and self._pending_move is not None:
+            self._start_pending_move()
+
+        if self._active_move is not None:
+            self._advance_active_move(ms)

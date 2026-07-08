@@ -103,6 +103,42 @@ class TestGameClick(unittest.TestCase):
         self.assertEqual(game.board.get_piece(Position(0, 1)), "wK")
         self.assertEqual(game.board.get_piece(Position(0, 0)), EMPTY_SQUARE)
 
+    # בדיקה: לפני הגיע הזמן, הכלי עדיין נשאר במקורו.
+    def test_piece_stays_in_source_until_arrival_time(self):
+        grid = [["wR", EMPTY_SQUARE, EMPTY_SQUARE]]
+        game = make_game(grid)
+        game.click(0, 0)
+        game.click(100, 0)
+        game.wait(500)
+        self.assertEqual(game.board.get_piece(Position(0, 0)), "wR")
+        self.assertEqual(game.board.get_piece(Position(0, 1)), EMPTY_SQUARE)
+
+    # בדיקה: אחרי זמן ההגעה המלא, הכלי מגיע ליעד.
+    def test_piece_reaches_destination_after_full_travel_time(self):
+        grid = [["wR", EMPTY_SQUARE, EMPTY_SQUARE]]
+        game = make_game(grid)
+        game.click(0, 0)
+        game.click(200, 0)
+        game.wait(1000)
+        self.assertEqual(game.board.get_piece(Position(0, 0)), "wR")
+        self.assertEqual(game.board.get_piece(Position(0, 2)), EMPTY_SQUARE)
+        game.wait(1000)
+        self.assertEqual(game.board.get_piece(Position(0, 2)), "wR")
+        self.assertEqual(game.board.get_piece(Position(0, 0)), EMPTY_SQUARE)
+
+    # בדיקה: מהלך ממתין לא מתעדכן על ידי לחיצה חדשה בזמן התנועה.
+    def test_pending_move_ignores_redirected_click(self):
+        grid = [["wR", EMPTY_SQUARE, EMPTY_SQUARE]]
+        game = make_game(grid)
+        game.click(0, 0)
+        game.click(200, 0)
+        game.wait(1000)
+        game.click(0, 0)
+        game.click(100, 0)
+        game.wait(1000)
+        self.assertEqual(game.board.get_piece(Position(0, 2)), "wR")
+        self.assertEqual(game.board.get_piece(Position(0, 1)), EMPTY_SQUARE)
+
     # בדיקה: אחרי wait ובצוע הזזה, selected_position מתאפס.
     def test_selection_cleared_after_wait_and_move(self):
         grid = [["wK", EMPTY_SQUARE]]
