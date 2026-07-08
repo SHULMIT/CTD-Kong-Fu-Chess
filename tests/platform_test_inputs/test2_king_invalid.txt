@@ -1,0 +1,9 @@
+Board:
+wK . .
+. . .
+. . .
+Commands:
+click 50 50
+click 250 250
+wait 1000
+print board

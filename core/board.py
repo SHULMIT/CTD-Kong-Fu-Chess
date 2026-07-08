@@ -1,7 +1,9 @@
 # core/board.py
 
+from config.constants import EMPTY_SQUARE
+
 class Board:
-    EMPTY_CELL = "."
+    EMPTY_CELL = EMPTY_SQUARE
 
     def __init__(self, rows):
         self._rows = rows
