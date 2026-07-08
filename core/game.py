@@ -26,6 +26,7 @@ class Game:
         self.selected_position = None
         self._pending_move = None  # (from_pos, to_pos, piece_code) ממתין להתחלה
         self._active_move = None  # {'from_pos':..., 'to_pos':..., 'piece':..., 'remaining_time_ms':...}
+        self.game_over = False
 
     def _is_move_in_progress(self):
         """True while a piece is already traveling along its route."""
@@ -36,7 +37,7 @@ class Game:
         מטפלת בלחיצה בקואורדינטות פיקסלים.
         ממירה לתא בלוח (כל תא = 100 פיקסלים) ומנתבת לפעולה המתאימה.
         """
-        if self._is_move_in_progress():
+        if self.game_over or self._is_move_in_progress():
             return
 
         col = x // 100
@@ -136,8 +137,20 @@ class Game:
 
     def _apply_move(self, from_pos, to_pos, piece):
         """Apply a completed move to the board."""
+        target_piece = self.board.get_piece(to_pos)
         self.board.set_piece(to_pos, piece)
         self.board.set_piece(from_pos, Board.EMPTY_CELL)
+
+        if self._is_enemy_king_capture(piece, target_piece):
+            self.game_over = True
+
+    def _is_enemy_king_capture(self, moving_piece, target_piece):
+        """True when the move lands on the opponent king."""
+        if target_piece == Board.EMPTY_CELL or target_piece is None:
+            return False
+        if len(target_piece) != 2 or len(moving_piece) != 2:
+            return False
+        return target_piece[1] == 'K' and target_piece[0] != moving_piece[0]
 
     def wait(self, ms):
         """
@@ -146,6 +159,9 @@ class Game:
         """
         if ms < 0:
             raise ValueError("wait time cannot be negative")
+
+        if self.game_over:
+            return
 
         self.clock.tick(ms)
 
