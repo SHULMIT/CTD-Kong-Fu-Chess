@@ -139,6 +139,44 @@ class TestGameClick(unittest.TestCase):
         self.assertEqual(game.board.get_piece(Position(0, 2)), "wR")
         self.assertEqual(game.board.get_piece(Position(0, 1)), EMPTY_SQUARE)
 
+    # בדיקה: לא ניתן לשמור שני מהלכים במקביל לפני ה-wait.
+    def test_second_move_is_rejected_while_first_is_pending(self):
+        grid = [["wR", EMPTY_SQUARE, EMPTY_SQUARE], [EMPTY_SQUARE, EMPTY_SQUARE, EMPTY_SQUARE], ["bR", EMPTY_SQUARE, EMPTY_SQUARE]]
+        game = make_game(grid)
+        game.click(0, 0)
+        game.click(200, 0)
+        game.click(200, 200)
+        game.click(200, 200)
+        game.wait(2000)
+        self.assertEqual(game.board.get_piece(Position(0, 2)), "wR")
+        self.assertEqual(game.board.get_piece(Position(2, 0)), "bR")
+
+    # בדיקה: בזמן שהכלי בתנועה, לחיצה חדשה לא משנה את המסלול.
+    def test_piece_cannot_be_redirected_while_in_motion(self):
+        grid = [["wR", EMPTY_SQUARE, EMPTY_SQUARE]]
+        game = make_game(grid)
+        game.click(0, 0)
+        game.click(200, 0)
+        game.wait(1000)
+        game.click(0, 0)
+        game.click(100, 0)
+        game.wait(1000)
+        self.assertEqual(game.board.get_piece(Position(0, 2)), "wR")
+        self.assertEqual(game.board.get_piece(Position(0, 1)), EMPTY_SQUARE)
+
+    # בדיקה: אחרי הגעת הכלי, אפשר לבחור אותו שוב ולהזיז אותו מיד בלי קולדאאון.
+    def test_piece_can_move_again_immediately_after_arrival(self):
+        grid = [["wR", EMPTY_SQUARE, EMPTY_SQUARE]]
+        game = make_game(grid)
+        game.click(0, 0)
+        game.click(200, 0)
+        game.wait(2000)
+        game.click(200, 0)
+        game.click(100, 0)
+        game.wait(1000)
+        self.assertEqual(game.board.get_piece(Position(0, 1)), "wR")
+        self.assertEqual(game.board.get_piece(Position(0, 2)), EMPTY_SQUARE)
+
     # בדיקה: אחרי wait ובצוע הזזה, selected_position מתאפס.
     def test_selection_cleared_after_wait_and_move(self):
         grid = [["wK", EMPTY_SQUARE]]

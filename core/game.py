@@ -27,12 +27,16 @@ class Game:
         self._pending_move = None  # (from_pos, to_pos, piece_code) ממתין להתחלה
         self._active_move = None  # {'from_pos':..., 'to_pos':..., 'piece':..., 'remaining_time_ms':...}
 
+    def _is_move_in_progress(self):
+        """True while a piece is already traveling along its route."""
+        return self._active_move is not None
+
     def click(self, x, y):
         """
         מטפלת בלחיצה בקואורדינטות פיקסלים.
         ממירה לתא בלוח (כל תא = 100 פיקסלים) ומנתבת לפעולה המתאימה.
         """
-        if self._active_move is not None:
+        if self._is_move_in_progress():
             return
 
         col = x // 100
@@ -82,6 +86,10 @@ class Game:
         המהלך יתחיל רק כשהזמן יתקדם ב-wait().
         """
         piece_obj = piece_from_code(piece)
+
+        if self._pending_move is not None:
+            self.selected_position = None
+            return
 
         # כלי לא ממומש (למשל פיון ריק) — מבטלים בחירה
         if piece_obj is None:
