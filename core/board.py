@@ -1,43 +1,14 @@
-from core.position import Position
-
+# core/board.py
 
 class Board:
-    """
-    Represents the game board.
-    Responsible only for storing the board state.
-    """
+    def __init__(self, grid):
+        self._grid = grid
+        self.height = len(grid)
+        self.width = len(grid[0]) if self.height > 0 else 0
 
-    EMPTY_CELL = "."
+    def get_piece_at(self, row, col):
+        """מחזירה את הכלי במיקום המבוקש מבלי לחשוף את מבנה הנתונים הפנימי"""
+        return self._grid[row][col]
 
-    def __init__(self, rows: list[list[str]]):
-        self._rows = rows
-
-    @property
-    def width(self) -> int:
-        return len(self._rows[0]) if self._rows else 0
-
-    @property
-    def height(self) -> int:
-        return len(self._rows)
-
-    def is_inside(self, position: Position) -> bool:
-        return (
-            0 <= position.row < self.height
-            and
-            0 <= position.column < self.width
-        )
-
-    def get_piece(self, position: Position) -> str:
-        if not self.is_inside(position):
-            raise IndexError("Position outside board.")
-
-        return self._rows[position.row][position.column]
-
-    def set_piece(self, position: Position, piece: str) -> None:
-        if not self.is_inside(position):
-            raise IndexError("Position outside board.")
-
-        self._rows[position.row][position.column] = piece
-
-    def get_rows(self) -> list[list[str]]:
-        return self._rows
+    def get_piece(self, position):
+        return self.get_piece_at(position.row, position.column)
