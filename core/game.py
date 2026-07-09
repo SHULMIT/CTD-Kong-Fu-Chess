@@ -143,6 +143,8 @@ class Game:
 
         if self._is_enemy_king_capture(piece, target_piece):
             self.game_over = True
+        elif self._should_promote(piece, to_pos, self.board):
+            self.board.set_piece(to_pos, self._promotion_piece(piece))
 
     def _is_enemy_king_capture(self, moving_piece, target_piece):
         """True when the move lands on the opponent king."""
@@ -151,6 +153,21 @@ class Game:
         if len(target_piece) != 2 or len(moving_piece) != 2:
             return False
         return target_piece[1] == 'K' and target_piece[0] != moving_piece[0]
+
+    def _should_promote(self, piece, pos, board):
+        """True when a pawn reaches the promotion row for its color and board size."""
+        if len(piece) != 2 or piece[1] != 'P':
+            return False
+        if piece[0] == 'w':
+            return pos.row == 0
+        return pos.row == self._promotion_row(board)
+
+    def _promotion_row(self, board):
+        return 0 if board.height >= 6 else board.height - 1
+
+    def _promotion_piece(self, piece):
+        """Return the promoted piece code for a pawn."""
+        return piece[0] + 'Q'
 
     def wait(self, ms):
         """
