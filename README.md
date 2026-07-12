@@ -62,4 +62,5 @@ This project is actively developed as part of a university chess engine assignme
 
 ## Author
 
-Developed by **Your Name**
+Developed by Shulamit s
+
