@@ -365,3 +365,23 @@ class TestCourseSpecRegression(unittest.TestCase):
         output = self._run_main(stdin_data)
 
         self.assertEqual(output, ". wP .\nwP . .\n. wN .")
+
+    def test_airborne_piece_captures_arriving_enemy(self):
+        stdin_data = "\n".join(
+            [
+                "Board:",
+                ". . .",
+                "wK bR .",
+                ". . .",
+                "Commands:",
+                "jump 50 150",
+                "click 150 150",
+                "click 50 150",
+                "wait 1000",
+                "print board",
+            ]
+        )
+
+        output = self._run_main(stdin_data)
+
+        self.assertEqual(output, ". . .\nwK . .\n. . .")

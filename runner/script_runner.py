@@ -38,6 +38,9 @@ class ScriptRunner:
             if command.startswith("click"):
                 self._handle_click(command)
 
+            elif command.startswith("jump"):
+                self._handle_jump(command)
+
             elif command.startswith("wait"):
                 self._handle_wait(command)
 
@@ -55,6 +58,21 @@ class ScriptRunner:
         _, x, y = command.split()
 
         self._controller.handle_click(
+            int(x),
+            int(y),
+        )
+
+    def _handle_jump(
+        self,
+        command: str,
+    ) -> None:
+        """
+        Executes a jump command.
+        """
+
+        _, x, y = command.split()
+
+        self._controller.jump(
             int(x),
             int(y),
         )

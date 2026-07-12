@@ -38,6 +38,8 @@ class PieceState(Enum):
     IDLE = auto()
     MOVING = auto()
     CAPTURED = auto()
+    AIRBORNE = auto()
+
 
 
 class Piece:
@@ -95,6 +97,13 @@ class Piece:
     @state.setter
     def state(self, new_state: PieceState):
         self._state = new_state
+
+    @type.setter
+    def type(
+        self,
+        new_type: PieceType,
+    ) -> None:
+        self._type = new_type    
 
     def __repr__(self):
         return (

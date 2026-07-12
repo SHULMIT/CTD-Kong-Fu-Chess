@@ -8,7 +8,7 @@ from model.position import Position
 from realtime.duration_calculator import DurationCalculator
 from realtime.real_time_arbiter import RealTimeArbiter
 from rules.rule_engine import RuleEngine
-
+from model.piece import Piece
 
 class GameEngine:
 	"""
@@ -97,6 +97,21 @@ class GameEngine:
 
 		if self._arbiter.consume_captured_king_flag():
 			self._game_over = True
+
+	def jump(
+		self,
+		position: Position,
+	) -> None:
+		"""
+		Marks a piece as airborne.
+		"""
+
+		piece = self._board.get_piece(position)
+
+		if not isinstance(piece, Piece):
+			return
+
+		self._arbiter.jump(piece)
 
 	def is_inside(self, position: Position) -> bool:
 		return self._board.is_inside(position)

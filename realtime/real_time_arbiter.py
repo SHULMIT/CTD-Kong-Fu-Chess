@@ -3,7 +3,7 @@ Manages piece movement over time.
 """
 
 from model.board import Board
-from model.piece import Piece, PieceState, PieceType
+from model.piece import Piece, PieceColor, PieceState, PieceType
 from model.position import Position
 from realtime.motion import Motion
 
@@ -86,25 +86,93 @@ class RealTimeArbiter:
         Resolves the completed motion.
         """
 
-        source = self._active_motion.source
-        target = self._active_motion.target
+        motion = self._active_motion
+
+        if motion is None:
+            return
+
+        piece = motion.piece
+        source = motion.source
+        target = motion.target
 
         captured_piece = self._board.get_piece(target)
         self._last_captured_piece = None
         self._captured_king_in_last_resolution = False
 
-        if captured_piece != self._board.EMPTY_CELL:
+        if (
+            isinstance(captured_piece, Piece)
+            and captured_piece.state == PieceState.AIRBORNE
+        ):
+            # Airborne defender captures the arriving attacker.
+            self._last_captured_piece = piece
+            piece.state = PieceState.CAPTURED
+
+            if piece.type == PieceType.KING:
+                self._captured_king_in_last_resolution = True
+
+            self._board.set_piece(
+                source,
+                self._board.EMPTY_CELL,
+            )
+            captured_piece.state = PieceState.IDLE
+            self._active_motion = None
+            return
+
+        if isinstance(captured_piece, Piece):
             self._last_captured_piece = captured_piece
+            captured_piece.state = PieceState.CAPTURED
 
-            if isinstance(captured_piece, Piece):
-                captured_piece.state = PieceState.CAPTURED
-
-                if captured_piece.type == PieceType.KING:
-                    self._captured_king_in_last_resolution = True
+            if captured_piece.type == PieceType.KING:
+                self._captured_king_in_last_resolution = True
 
         self._board.move_piece(
             source,
             target,
         )
 
+        self._handle_promotion(piece)
+
         self._active_motion = None
+
+    def _handle_promotion(
+        self,
+        piece: Piece,
+    ) -> None:
+        """
+        Promotes a pawn that reaches the last rank.
+        """
+
+        if piece.type != PieceType.PAWN:
+            return
+
+        if (
+            piece.color == PieceColor.WHITE
+            and piece.position.row == 0
+        ):
+            self._promote(piece)
+
+        elif (
+            piece.color == PieceColor.BLACK
+            and piece.position.row == self._board.height - 1
+        ):
+            self._promote(piece)
+
+    def _promote(
+        self,
+        piece: Piece,
+    ) -> None:
+        """
+        Promotes a pawn to a queen.
+        """
+
+        piece.type = PieceType.QUEEN
+
+    def jump(
+        self,
+        piece: Piece,
+    ) -> None:
+        """
+        Marks a piece as airborne.
+        """
+
+        piece.state = PieceState.AIRBORNE    

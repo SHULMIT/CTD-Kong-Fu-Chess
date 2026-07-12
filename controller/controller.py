@@ -62,3 +62,22 @@ class Controller:
         )
 
         self._selected_position = None
+
+    def jump(
+        self,
+        x: int,
+        y: int,
+    ) -> None:
+        """
+        Marks the clicked piece as airborne.
+        """
+
+        position = self._board_mapper.to_position(
+            x,
+            y,
+        )
+
+        if not self._game_engine.is_inside(position):
+            return
+
+        self._game_engine.jump(position)

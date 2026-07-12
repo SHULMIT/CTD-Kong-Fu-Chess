@@ -1,4 +1,4 @@
-﻿"""
+"""
 Shared helper functions for movement rules.
 """
 
@@ -23,7 +23,7 @@ DIAGONAL_DIRECTIONS = (
 
 
 def is_empty_square(piece: Piece | None) -> bool:
-    return piece is None
+    return piece is None or piece == Board.EMPTY_CELL
 
 
 def is_enemy_piece(
@@ -31,7 +31,7 @@ def is_enemy_piece(
     target_piece: Piece | None,
 ) -> bool:
     return (
-        target_piece is not None
+        isinstance(target_piece, Piece)
         and moving_piece.color != target_piece.color
     )
 
@@ -41,7 +41,7 @@ def is_friendly_piece(
     target_piece: Piece | None,
 ) -> bool:
     return (
-        target_piece is not None
+        isinstance(target_piece, Piece)
         and moving_piece.color == target_piece.color
     )
 

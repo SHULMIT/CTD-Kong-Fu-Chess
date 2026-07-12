@@ -12,7 +12,7 @@ from realtime.duration_calculator import DurationCalculator
 from realtime.real_time_arbiter import RealTimeArbiter
 from rules.rule_engine import RuleEngine
 from runner.script_runner import ScriptRunner
-
+#https://github.com/SHULMIT/CTD-Kong-Fu-Chess
 
 def _split_input(
     lines: list[str],

@@ -97,3 +97,31 @@ class TestRealTimeArbiter(unittest.TestCase):
         arbiter.advance_time(1000)
 
         self.assertFalse(arbiter.has_active_motion())
+
+    def test_airborne_defender_captures_arriving_attacker(self):
+        defender = self._make_piece(1, PieceType.KING, 1, 0, PieceColor.WHITE)
+        attacker = self._make_piece(2, PieceType.ROOK, 1, 1, PieceColor.BLACK)
+        board = Board(
+            [
+                [EMPTY_SQUARE, EMPTY_SQUARE, EMPTY_SQUARE],
+                [defender, attacker, EMPTY_SQUARE],
+                [EMPTY_SQUARE, EMPTY_SQUARE, EMPTY_SQUARE],
+            ]
+        )
+        arbiter = RealTimeArbiter(board=board)
+
+        arbiter.jump(defender)
+        arbiter.start_motion(
+            piece=attacker,
+            source=Position(1, 1),
+            target=Position(1, 0),
+            duration=1000,
+        )
+        arbiter.advance_time(1000)
+
+        self.assertIs(board.get_piece(Position(1, 0)), defender)
+        self.assertEqual(board.get_piece(Position(1, 1)), EMPTY_SQUARE)
+        self.assertEqual(defender.state, PieceState.IDLE)
+        self.assertEqual(attacker.state, PieceState.CAPTURED)
+        self.assertIs(arbiter.last_captured_piece, attacker)
+        self.assertFalse(arbiter.consume_captured_king_flag())
