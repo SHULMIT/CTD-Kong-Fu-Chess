@@ -125,3 +125,38 @@ class TestRealTimeArbiter(unittest.TestCase):
         self.assertEqual(attacker.state, PieceState.CAPTURED)
         self.assertIs(arbiter.last_captured_piece, attacker)
         self.assertFalse(arbiter.consume_captured_king_flag())
+
+    def test_jump_lands_after_one_second(self):
+        jumper = self._make_piece(1, PieceType.KING, 0, 0, PieceColor.WHITE)
+        board = Board([[jumper]])
+        arbiter = RealTimeArbiter(board=board)
+
+        arbiter.jump(jumper)
+        arbiter.advance_time(999)
+
+        self.assertEqual(jumper.state, PieceState.AIRBORNE)
+
+        arbiter.advance_time(1)
+
+        self.assertEqual(jumper.state, PieceState.IDLE)
+
+    def test_enemy_arrives_after_landing_captures_normally(self):
+        defender = self._make_piece(1, PieceType.KING, 0, 0, PieceColor.WHITE)
+        attacker = self._make_piece(2, PieceType.ROOK, 0, 3, PieceColor.BLACK)
+        board = Board([[defender, EMPTY_SQUARE, EMPTY_SQUARE, attacker]])
+        arbiter = RealTimeArbiter(board=board)
+
+        arbiter.jump(defender)
+        arbiter.start_motion(
+            piece=attacker,
+            source=Position(0, 3),
+            target=Position(0, 0),
+            duration=3000,
+        )
+        arbiter.advance_time(3000)
+
+        self.assertIs(board.get_piece(Position(0, 0)), attacker)
+        self.assertEqual(defender.state, PieceState.CAPTURED)
+        self.assertEqual(attacker.state, PieceState.IDLE)
+        self.assertIs(arbiter.last_captured_piece, defender)
+        self.assertTrue(arbiter.consume_captured_king_flag())

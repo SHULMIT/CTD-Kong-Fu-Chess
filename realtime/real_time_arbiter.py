@@ -8,6 +8,9 @@ from model.position import Position
 from realtime.motion import Motion
 
 
+JUMP_DURATION_MILLISECONDS = 1000
+
+
 class RealTimeArbiter:
     """
     Manages real-time piece movement.
@@ -19,6 +22,7 @@ class RealTimeArbiter:
     ):
         self._board = board
         self._active_motion: Motion | None = None
+        self._airborne_timers: dict[Piece, int] = {}
         self._last_captured_piece: Piece | None = None
         self._captured_king_in_last_resolution = False
 
@@ -73,13 +77,56 @@ class RealTimeArbiter:
         Advances the active motion.
         """
 
-        if self._active_motion is None:
+        if self._active_motion is None and not self._airborne_timers:
             return
 
-        self._active_motion.advance_time(milliseconds)
+        remaining_time = milliseconds
 
-        if self._active_motion.is_finished():
-            self._resolve_arrival()
+        while remaining_time > 0:
+            next_event_time = remaining_time
+
+            if self._active_motion is not None:
+                next_event_time = min(
+                    next_event_time,
+                    self._active_motion.duration - self._active_motion.elapsed_time,
+                )
+
+            if self._airborne_timers:
+                next_event_time = min(
+                    next_event_time,
+                    min(self._airborne_timers.values()),
+                )
+
+            if self._active_motion is not None:
+                self._active_motion.advance_time(next_event_time)
+
+            self._advance_airborne_time(next_event_time)
+            remaining_time -= next_event_time
+
+            if (
+                self._active_motion is not None
+                and self._active_motion.is_finished()
+            ):
+                self._resolve_arrival()
+
+            self._land_finished_airborne_pieces()
+
+    def _advance_airborne_time(
+        self,
+        milliseconds: int,
+    ) -> None:
+        for piece in list(self._airborne_timers):
+            self._airborne_timers[piece] -= milliseconds
+
+    def _land_finished_airborne_pieces(self) -> None:
+        for piece, remaining_time in list(self._airborne_timers.items()):
+            if remaining_time > 0:
+                continue
+
+            if piece.state == PieceState.AIRBORNE:
+                piece.state = PieceState.IDLE
+
+            self._airborne_timers.pop(piece)
 
     def _resolve_arrival(self) -> None:
         """
@@ -106,6 +153,7 @@ class RealTimeArbiter:
             # Airborne defender captures the arriving attacker.
             self._last_captured_piece = piece
             piece.state = PieceState.CAPTURED
+            self._airborne_timers.pop(piece, None)
 
             if piece.type == PieceType.KING:
                 self._captured_king_in_last_resolution = True
@@ -114,13 +162,13 @@ class RealTimeArbiter:
                 source,
                 self._board.EMPTY_CELL,
             )
-            captured_piece.state = PieceState.IDLE
             self._active_motion = None
             return
 
         if isinstance(captured_piece, Piece):
             self._last_captured_piece = captured_piece
             captured_piece.state = PieceState.CAPTURED
+            self._airborne_timers.pop(captured_piece, None)
 
             if captured_piece.type == PieceType.KING:
                 self._captured_king_in_last_resolution = True
@@ -175,4 +223,5 @@ class RealTimeArbiter:
         Marks a piece as airborne.
         """
 
-        piece.state = PieceState.AIRBORNE    
+        piece.state = PieceState.AIRBORNE
+        self._airborne_timers[piece] = JUMP_DURATION_MILLISECONDS

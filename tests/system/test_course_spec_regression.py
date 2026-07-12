@@ -385,3 +385,24 @@ class TestCourseSpecRegression(unittest.TestCase):
         output = self._run_main(stdin_data)
 
         self.assertEqual(output, ". . .\nwK . .\n. . .")
+
+    def test_enemy_arrives_after_landing_captures_normally(self):
+        stdin_data = "\n".join(
+            [
+                "Board:",
+                ". . . .",
+                "wK . . bR",
+                ". . . .",
+                "Commands:",
+                "jump 50 150",
+                "wait 1000",
+                "click 350 150",
+                "click 50 150",
+                "wait 3000",
+                "print board",
+            ]
+        )
+
+        output = self._run_main(stdin_data)
+
+        self.assertEqual(output, ". . . .\nbR . . .\n. . . .")
