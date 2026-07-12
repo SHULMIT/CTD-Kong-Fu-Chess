@@ -67,7 +67,7 @@ class PieceMapper:
         Converts a Piece into its board representation.
         """
 
-        if piece is None:
+        if piece is None or piece == EMPTY_SQUARE:
             return EMPTY_SQUARE
 
         return (

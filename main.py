@@ -1,67 +1,92 @@
-# main.py
+"""
+Program entry point.
+"""
 
 import sys
-# URL: https://github.com/your-username/kong-fu-chess-repo
 
 from board_io.text_board_parser import TextBoardParser
-from board_io.text_board_formatter import TextBoardFormatter
-from core.game import Game
+from controller.board_mapper import BoardMapper
+from controller.controller import Controller
+from game.game_engine import GameEngine
+from realtime.duration_calculator import DurationCalculator
+from realtime.real_time_arbiter import RealTimeArbiter
+from rules.rule_engine import RuleEngine
+from runner.script_runner import ScriptRunner
 
-def _parse_input_sections(input_lines):
-    # מחלקת את שורות הקלט לחלק של הלוח ולחלק של הפקודות
+
+def _split_input(
+    lines: list[str],
+) -> tuple[list[str], list[str]]:
+    """
+    Splits the input into board lines and command lines.
+    """
+
     board_lines = []
     command_lines = []
-    mode = None
 
-    for line in input_lines:
-        stripped_line = line.strip()
-        if stripped_line == "Board:":
-            mode = "board"
+    current_section = None
+
+    for line in lines:
+
+        line = line.strip()
+
+        if line == "Board:":
+            current_section = board_lines
             continue
-        elif stripped_line == "Commands:":
-            mode = "commands"
+
+        if line == "Commands:":
+            current_section = command_lines
             continue
-        
-        if mode == "board" and stripped_line:
-            board_lines.append(stripped_line)
-        elif mode == "commands" and stripped_line:
-            command_lines.append(stripped_line)
-            
+
+        if current_section is not None:
+            current_section.append(line)
+
     return board_lines, command_lines
 
-def _execute_command(game, command_line):
-    # מפענחת ומבצעת פקודה בודדת
-    tokens = command_line.split()
-    if not tokens:
-        return
 
-    action = tokens[0]
-    
-    if action == "click" and len(tokens) == 3:
-        game.click(int(tokens[1]), int(tokens[2]))
-        
-    elif action == "wait" and len(tokens) == 2:
-        game.wait(int(tokens[1]))
-        
-    elif action == "print" and len(tokens) == 2 and tokens[1] == "board":
-        print(TextBoardFormatter.format(game.board))
+def main() -> None:
+    """
+    Program entry point.
+    """
 
-def main():
-    # 1. קריאת קלט
-    input_data = sys.stdin.read().strip().splitlines()
-    board_lines, command_lines = _parse_input_sections(input_data)
+    lines = sys.stdin.read().splitlines()
 
-    # 2. אתחול הלוח
+    board_lines, command_lines = _split_input(lines)
+
     try:
         board = TextBoardParser.parse(board_lines)
-    except ValueError as e:
-        print(str(e))
+
+    except ValueError as error:
+        print(error)
         return
 
-    # 3. יצירת המשחק והרצת הפקודות
-    game = Game(board)
-    for cmd_line in command_lines:
-        _execute_command(game, cmd_line)
+    rule_engine = RuleEngine()
+
+    arbiter = RealTimeArbiter(board)
+
+    duration_calculator = DurationCalculator()
+
+    game_engine = GameEngine(
+        board=board,
+        rule_engine=rule_engine,
+        arbiter=arbiter,
+        duration_calculator=duration_calculator,
+    )
+
+    board_mapper = BoardMapper()
+
+    controller = Controller(
+        game_engine=game_engine,
+        board_mapper=board_mapper,
+    )
+
+    runner = ScriptRunner(
+        controller=controller,
+        game_engine=game_engine,
+    )
+
+    runner.run(command_lines)
+
 
 if __name__ == "__main__":
     main()

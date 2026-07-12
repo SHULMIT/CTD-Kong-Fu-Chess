@@ -10,7 +10,6 @@ class PieceFactory:
     """
     Responsible for creating Piece objects.
 
-    The factory does not parse board text.
     It only creates Piece instances from already parsed data.
     """
 

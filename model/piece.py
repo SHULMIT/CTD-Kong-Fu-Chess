@@ -39,6 +39,7 @@ class PieceState(Enum):
     MOVING = auto()
     CAPTURED = auto()
 
+
 class Piece:
     """
     Represents a logical chess piece.

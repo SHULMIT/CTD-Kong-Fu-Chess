@@ -1,6 +1,7 @@
-# core/board.py
+# model/board.py
 
 from config.constants import EMPTY_SQUARE
+from model.position import Position
 
 class Board:
     EMPTY_CELL = EMPTY_SQUARE
@@ -32,3 +33,21 @@ class Board:
         if not self.is_inside(position):
             raise IndexError("Position outside board.")
         self._rows[position.row][position.column] = piece
+
+
+    def move_piece(self, source: Position, target: Position) -> None:
+        """
+        Moves a piece from source to target.
+
+        Assumes the move has already been validated.
+        """
+        piece = self.get_piece(source)
+
+        if piece == self.EMPTY_CELL:
+            raise ValueError("Source cell is empty.")
+
+        self.set_piece(target, piece)
+        self.set_piece(source, self.EMPTY_CELL)
+
+        piece.position = target
+

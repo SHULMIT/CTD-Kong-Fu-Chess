@@ -1,0 +1,99 @@
+"""
+Tests for realtime.real_time_arbiter.
+"""
+
+import unittest
+
+from config.constants import EMPTY_SQUARE
+from model.board import Board
+from model.piece import Piece, PieceColor, PieceState, PieceType
+from model.position import Position
+from realtime.real_time_arbiter import RealTimeArbiter
+
+
+class TestRealTimeArbiter(unittest.TestCase):
+    def _make_piece(
+        self,
+        piece_id: int,
+        piece_type: PieceType,
+        row: int,
+        column: int,
+        color: PieceColor = PieceColor.WHITE,
+    ) -> Piece:
+        return Piece(
+            piece_id=piece_id,
+            piece_type=piece_type,
+            color=color,
+            position=Position(row, column),
+            state=PieceState.IDLE,
+        )
+
+    def test_capture_marks_piece_as_captured_and_stores_last_captured_piece(self):
+        attacker = self._make_piece(1, PieceType.ROOK, 0, 0, PieceColor.WHITE)
+        victim = self._make_piece(2, PieceType.BISHOP, 0, 1, PieceColor.BLACK)
+        board = Board([[attacker, victim]])
+        arbiter = RealTimeArbiter(board=board)
+
+        arbiter.start_motion(
+            piece=attacker,
+            source=Position(0, 0),
+            target=Position(0, 1),
+            duration=1000,
+        )
+        arbiter.advance_time(1000)
+
+        self.assertEqual(victim.state, PieceState.CAPTURED)
+        self.assertIs(arbiter.last_captured_piece, victim)
+        self.assertIs(board.get_piece(Position(0, 1)), attacker)
+        self.assertEqual(board.get_piece(Position(0, 0)), EMPTY_SQUARE)
+
+    def test_consume_captured_king_flag_returns_true_once_then_resets(self):
+        attacker = self._make_piece(1, PieceType.QUEEN, 0, 0, PieceColor.WHITE)
+        king = self._make_piece(2, PieceType.KING, 0, 1, PieceColor.BLACK)
+        board = Board([[attacker, king]])
+        arbiter = RealTimeArbiter(board=board)
+
+        arbiter.start_motion(
+            piece=attacker,
+            source=Position(0, 0),
+            target=Position(0, 1),
+            duration=1000,
+        )
+        arbiter.advance_time(1000)
+
+        self.assertTrue(arbiter.consume_captured_king_flag())
+        self.assertFalse(arbiter.consume_captured_king_flag())
+
+    def test_non_capture_keeps_last_captured_none_and_king_flag_false(self):
+        mover = self._make_piece(1, PieceType.ROOK, 0, 0, PieceColor.WHITE)
+        board = Board([[mover, EMPTY_SQUARE]])
+        arbiter = RealTimeArbiter(board=board)
+
+        arbiter.start_motion(
+            piece=mover,
+            source=Position(0, 0),
+            target=Position(0, 1),
+            duration=1000,
+        )
+        arbiter.advance_time(1000)
+
+        self.assertIsNone(arbiter.last_captured_piece)
+        self.assertFalse(arbiter.consume_captured_king_flag())
+
+    def test_has_active_motion_transitions_true_to_false_on_finish(self):
+        mover = self._make_piece(1, PieceType.KNIGHT, 0, 0, PieceColor.WHITE)
+        board = Board([[mover, EMPTY_SQUARE, EMPTY_SQUARE]])
+        arbiter = RealTimeArbiter(board=board)
+
+        arbiter.start_motion(
+            piece=mover,
+            source=Position(0, 0),
+            target=Position(0, 2),
+            duration=1000,
+        )
+
+        self.assertTrue(arbiter.has_active_motion())
+
+        arbiter.advance_time(1000)
+
+        self.assertFalse(arbiter.has_active_motion())
