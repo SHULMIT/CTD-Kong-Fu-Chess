@@ -1,5 +1,14 @@
 """
-Provides read/query operations over board state.
+Provides read-only access to the game state.
+
+Responsibilities:
+    - Expose board query operations.
+    - Retrieve board and piece information.
+    - Check board boundaries.
+    - Check whether a square contains a piece.
+
+This service performs read-only operations and never modifies the game state.
+It is used by the GameEngine to separate queries from game actions.
 """
 
 from model.board import Board

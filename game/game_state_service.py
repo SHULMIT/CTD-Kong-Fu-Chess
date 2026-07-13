@@ -1,5 +1,14 @@
 """
-Manages mutable game state that is independent from move validation.
+Manages the mutable game state.
+
+Responsibilities:
+    - Track whether the game has ended.
+    - Advance the game simulation over time.
+    - Update the game state after time-based events.
+    - Delegate time-related actions to the RealTimeArbiter.
+
+This service is responsible for game state transitions,
+but it does not validate or execute chess moves.
 """
 
 from model.piece import Piece

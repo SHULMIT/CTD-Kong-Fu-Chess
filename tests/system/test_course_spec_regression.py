@@ -111,9 +111,9 @@ class TestCourseSpecRegression(unittest.TestCase):
 
         output = self._run_main(stdin_data)
 
-        self.assertEqual(output, "wK . .\n. . .\n. . .")
+        self.assertEqual(output, "ERROR CLICK_EMPTY_SOURCE")
 
-    def test_click_outside_board_is_ignored(self):
+    def test_click_outside_board_prints_error(self):
         stdin_data = "\n".join(
             [
                 "Board:",
@@ -129,7 +129,24 @@ class TestCourseSpecRegression(unittest.TestCase):
 
         output = self._run_main(stdin_data)
 
-        self.assertEqual(output, "wK . .\n. . .\n. . .")
+        self.assertEqual(output, "ERROR CLICK_OUTSIDE_BOARD")
+
+    def test_jump_outside_board_prints_error(self):
+        stdin_data = "\n".join(
+            [
+                "Board:",
+                "wK . .",
+                ". . .",
+                ". . .",
+                "Commands:",
+                "jump 350 50",
+                "print board",
+            ]
+        )
+
+        output = self._run_main(stdin_data)
+
+        self.assertEqual(output, "ERROR JUMP_OUTSIDE_BOARD")
 
     def test_clicking_another_piece_replaces_selection(self):
         stdin_data = "\n".join(
@@ -216,7 +233,7 @@ class TestCourseSpecRegression(unittest.TestCase):
 
         output = self._run_main(stdin_data)
 
-        self.assertEqual(output, "wK . .\n. . .\n. . .")
+        self.assertEqual(output, "ERROR ILLEGAL_PIECE_MOVE")
 
     def test_rook_straight_valid(self):
         stdin_data = "\n".join(
@@ -252,7 +269,7 @@ class TestCourseSpecRegression(unittest.TestCase):
 
         output = self._run_main(stdin_data)
 
-        self.assertEqual(output, "wR . .\n. . .\n. . .")
+        self.assertEqual(output, "ERROR ILLEGAL_PIECE_MOVE")
 
     def test_bishop_diagonal_valid(self):
         stdin_data = "\n".join(
@@ -326,7 +343,7 @@ class TestCourseSpecRegression(unittest.TestCase):
 
         output = self._run_main(stdin_data)
 
-        self.assertEqual(output, "wR wP .")
+        self.assertEqual(output, "ERROR ILLEGAL_PIECE_MOVE")
 
     def test_bishop_blocked_by_own_piece(self):
         stdin_data = "\n".join(
@@ -345,7 +362,7 @@ class TestCourseSpecRegression(unittest.TestCase):
 
         output = self._run_main(stdin_data)
 
-        self.assertEqual(output, "wB . .\n. wP .\n. . .")
+        self.assertEqual(output, "ERROR ILLEGAL_PIECE_MOVE")
 
     def test_knight_jumps_over_blockers(self):
         stdin_data = "\n".join(

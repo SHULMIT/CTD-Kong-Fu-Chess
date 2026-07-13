@@ -1,5 +1,16 @@
 """
 Executes textual test commands.
+
+Responsibilities:
+    - Iterate over the input command list.
+    - Parse each textual command.
+    - Dispatch every command to the appropriate system component.
+    - Delegate user actions to the Controller.
+    - Delegate game-time operations to the GameEngine.
+    - Print the board using the TextBoardFormatter.
+
+This class does not implement game logic.
+It only translates textual commands into method calls.
 """
 
 from board_io.text_board_formatter import TextBoardFormatter
@@ -10,6 +21,7 @@ from config.constants import (
     COMMAND_WAIT,
 )
 from controller.controller import Controller
+from errors.user_input_errors import EmptyCommandError, UnknownCommandError
 from game.game_engine import GameEngine
 
 
@@ -39,7 +51,7 @@ class ScriptRunner:
             command = command.strip()
 
             if not command:
-                continue
+                raise EmptyCommandError()
 
             if command.startswith(COMMAND_CLICK):
                 self._handle_click(command)
@@ -52,6 +64,9 @@ class ScriptRunner:
 
             elif command == COMMAND_PRINT_BOARD:
                 self._handle_print_board()
+                
+            else:
+                raise UnknownCommandError()
 
     def _handle_click(
         self,

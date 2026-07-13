@@ -1,8 +1,26 @@
+
 """
-Translates user clicks into game commands.
+Translates user input into game commands.
+
+Responsibilities:
+    - Receive user input events.
+    - Convert screen coordinates into board positions.
+    - Manage the currently selected piece.
+    - Interpret user clicks as selection or movement requests.
+    - Delegate game actions to the GameEngine.
+
+This class does not implement chess rules.
+It only translates user interactions into game requests.
 """
 
 from controller.board_mapper import BoardMapper
+from errors.user_input_errors import (
+    ClickEmptySourceError,
+    ClickOutsideBoardError,
+    JumpEmptySourceError,
+    JumpOutsideBoardError,
+    raise_for_move_reason,
+)
 from game.game_engine import GameEngine
 from model.position import Position
 
@@ -37,11 +55,11 @@ class Controller:
 
         if not self._game_engine.is_inside(position):
             self._selected_position = None
-            return
+            raise ClickOutsideBoardError()
 
         if self._selected_position is None:
             if not self._game_engine.has_piece(position):
-                return
+                raise ClickEmptySourceError()
 
             self._selected_position = position
             return
@@ -56,12 +74,15 @@ class Controller:
                 self._selected_position = position
                 return
 
-        self._game_engine.request_move(
+        result = self._game_engine.request_move(
             self._selected_position,
             position,
         )
 
         self._selected_position = None
+
+        if not result.is_accepted:
+            raise_for_move_reason(result.reason)
 
     def jump(
         self,
@@ -78,6 +99,9 @@ class Controller:
         )
 
         if not self._game_engine.is_inside(position):
-            return
+            raise JumpOutsideBoardError()
+
+        if not self._game_engine.has_piece(position):
+            raise JumpEmptySourceError()
 
         self._game_engine.jump(position)

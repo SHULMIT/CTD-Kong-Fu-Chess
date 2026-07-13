@@ -1,6 +1,7 @@
 """
 Program entry point.
 """
+#https://github.com/SHULMIT/CTD-Kong-Fu-Chess
 
 import sys
 
@@ -8,12 +9,12 @@ from board_io.text_board_parser import TextBoardParser
 from config.constants import BOARD_SECTION_HEADER, COMMANDS_SECTION_HEADER
 from controller.board_mapper import BoardMapper
 from controller.controller import Controller
+from errors.user_input_errors import UserInputError
 from game.game_engine import GameEngine
 from realtime.duration_calculator import DurationCalculator
 from realtime.real_time_arbiter import RealTimeArbiter
 from rules.rule_engine import RuleEngine
 from runner.script_runner import ScriptRunner
-#https://github.com/SHULMIT/CTD-Kong-Fu-Chess
 
 def _split_input(
     lines: list[str],
@@ -86,7 +87,11 @@ def main() -> None:
         game_engine=game_engine,
     )
 
-    runner.run(command_lines)
+    try:
+        runner.run(command_lines)
+
+    except UserInputError as error:
+        print(error)
 
 
 if __name__ == "__main__":

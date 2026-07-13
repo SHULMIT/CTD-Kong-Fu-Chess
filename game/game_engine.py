@@ -6,6 +6,7 @@ from game.move_result import MoveReason, MoveResult
 from game.game_query_service import GameQueryService
 from game.game_state_service import GameStateService
 from game.request_move_service import RequestMoveService
+from errors.user_input_errors import JumpEmptySourceError
 from model.board import Board
 from model.position import Position
 from realtime.duration_calculator import DurationCalculator
@@ -78,7 +79,7 @@ class GameEngine:
 		piece = self._query_service.get_piece(position)
 
 		if not isinstance(piece, Piece):
-			return
+			raise JumpEmptySourceError()
 
 		self._state_service.jump_piece(piece)
 
