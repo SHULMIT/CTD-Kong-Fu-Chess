@@ -1,0 +1,22 @@
+# config/constants.py
+"""
+כאן יש ריכוז של כל המשתנים הקבועים בעבור איטריצה 1
+
+"""
+EMPTY_SQUARE = '.'
+VALID_COLORS = {'w', 'b'}
+VALID_PIECES = {'K', 'Q', 'R', 'B', 'N', 'P'}
+MILLISECONDS_PER_CELL = 1000
+JUMP_DURATION_MILLISECONDS = 1000
+CELL_SIZE = 100
+
+BOARD_SECTION_HEADER = "Board:"
+COMMANDS_SECTION_HEADER = "Commands:"
+
+COMMAND_CLICK = "click"
+COMMAND_JUMP = "jump"
+COMMAND_WAIT = "wait"
+COMMAND_PRINT_BOARD = "print board"
+
+ERR_UNKNOWN_TOKEN = "ERROR UNKNOWN_TOKEN"
+ERR_ROW_WIDTH_MISMATCH = "ERROR ROW_WIDTH_MISMATCH"
