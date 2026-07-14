@@ -3,13 +3,22 @@ from model.position import Position
 
 class BoardLayout:
     """
-    Responsible for calculating the board layout.
+    board_layout.py
 
-    This class is the bridge between the model (rows & columns)
-    and the graphical interface (pixels).
+    Contains the BoardLayout class.
 
-    Every graphical component should use this class instead
-    of calculating positions by itself.
+    The BoardLayout class belongs to the UI layer and is responsible
+    for calculating the graphical layout of the chess board.
+
+    Responsibilities:
+        - Calculate the board size.
+        - Calculate the size of each square.
+        - Center the board inside the window.
+        - Convert board coordinates to screen coordinates.
+        - Convert screen coordinates to board coordinates.
+
+    The class does NOT draw anything.
+    It only performs layout calculations.
     """
 
     def __init__(
@@ -19,14 +28,7 @@ class BoardLayout:
             board_ratio: float = 0.8,
             board_inner_ratio: float = 0.8,
     ):
-        """
-        Creates a dynamic board layout.
-
-        Args:
-            window_width: Width of the game window.
-            window_height: Height of the game window.
-            board_ratio: Percentage of the screen occupied by the board.
-        """
+       
 
         self.window_width = window_width
         self.window_height = window_height
@@ -51,15 +53,7 @@ class BoardLayout:
         self.cells_y = self.board_y + (self.board_size - self.inner_board_size) // 2
 
     def cell_to_pixel(self, position: Position) -> tuple[int, int]:
-        """
-        Converts a board position into pixel coordinates.
-
-        Args:
-            position: Position(row, column)
-
-        Returns:
-            (x, y)
-        """
+      
 
         x = self.cells_x + position.column * self.square_size
         y = self.cells_y + position.row * self.square_size
@@ -67,16 +61,7 @@ class BoardLayout:
         return x, y
 
     def pixel_to_cell(self, x: int, y: int) -> Position:
-        """
-        Converts mouse coordinates into a board position.
 
-        Args:
-            x: Mouse x coordinate.
-            y: Mouse y coordinate.
-
-        Returns:
-            Position
-        """
 
         column = (x - self.cells_x) // self.square_size
         row = (y - self.cells_y) // self.square_size

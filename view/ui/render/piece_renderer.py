@@ -9,7 +9,12 @@ from view.ui.window.game_canvas import GameCanvas
 
 class PieceRenderer:
     """
-    Responsible for drawing a single chess piece.
+    Renders chess pieces on the game canvas.
+
+    Responsibilities:
+        - Resolve the correct sprite for a piece.
+        - Retrieve the appropriate animation.
+        - Draw the current animation frame at the piece's position.
     """
 
     def __init__(
@@ -23,6 +28,8 @@ class PieceRenderer:
         self._layout = layout
         self._repository = repository
 
+
+#זמני צריך שינוי 
     def draw(self, piece: Piece) -> None:
         """
         Draws a single chess piece.
