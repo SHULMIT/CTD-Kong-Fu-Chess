@@ -1,36 +1,44 @@
 from view.ui.graphics.img import Img
+from view.ui.layout.board_layout import BoardLayout
 from view.ui.window.game_canvas import GameCanvas
 
 
 class BoardRenderer:
     """
-    Responsible for drawing the chess board on the game canvas.
+    board_renderer.py
+
+    Contains the BoardRenderer class.
+
+    The BoardRenderer belongs to the UI layer and is responsible
+    for drawing the chess board on the game canvas.
+
+    Responsibilities:
+        - Draw the board image.
+        - Use the layout to determine where to draw the board.
+
+    The renderer does NOT:
+        - Load images.
+        - Calculate positions.
+        - Know anything about chess rules.
     """
 
     def __init__(
             self,
             canvas: GameCanvas,
-            board_source: str | Img,
-            x: int,
-            y: int
+            layout: BoardLayout,
+            board: Img
     ):
-
         self._canvas = canvas
-        if isinstance(board_source, Img):
-            self._board = board_source
-        else:
-            self._board = Img().read(board_source)
-
-        self._x = x
-        self._y = y
+        self._layout = layout
+        self._board = board
 
     def draw(self) -> None:
         """
-        Draws the chess board on the canvas.
+        Draw the board on the canvas.
         """
 
         self._board.draw_on(
             self._canvas.canvas,
-            self._x,
-            self._y
+            self._layout.board_x,
+            self._layout.board_y
         )

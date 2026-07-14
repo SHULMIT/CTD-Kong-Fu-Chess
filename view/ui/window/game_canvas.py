@@ -26,6 +26,13 @@ class GameCanvas:
         Returns the current canvas.
         """
         return self._canvas
+    @property
+    def width(self) -> int:
+        return self.canvas.img.shape[1]
+
+    @property
+    def height(self) -> int:
+        return self.canvas.img.shape[0]
 
     def show(self) -> None:
         """
