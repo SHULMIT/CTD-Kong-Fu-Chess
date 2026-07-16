@@ -83,6 +83,17 @@ class PieceAnimationController:
         self._current_anim_state.pop(piece.id, None)
         self._anim_start_time.pop(piece.id, None)
 
+    def get_elapsed_seconds(
+        self,
+        piece: Piece,
+    ) -> float:
+        """Returns time elapsed since this piece entered its current state."""
+        start_time = self._anim_start_time.get(piece.id)
+        if start_time is None:
+            return 0.0
+
+        return max(0.0, time.perf_counter() - start_time)
+
     def clear(self) -> None:
         """Removes all tracked animation states."""
         self._current_anim_state.clear()

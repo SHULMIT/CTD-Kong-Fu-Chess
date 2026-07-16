@@ -11,7 +11,7 @@ from view.ui.window.game_canvas import GameCanvas
 class PlayerActivityRenderer:
     """Draws one compact activity panel for each player."""
 
-    _MAX_ACTIONS = 6
+    _MAX_ACTIONS = 3
 
     def __init__(
         self,
@@ -69,10 +69,10 @@ class PlayerActivityRenderer:
 
         padding = 18
         font = cv2.FONT_HERSHEY_DUPLEX
-        header_scale = 0.78
-        body_scale = 0.58
+        header_scale = 2.34
+        body_scale = 1.74
         text_x = x + padding
-        text_y = y + 38
+        text_y = y + 70
         score = self._player_activity.get_score(player)
         header_color = (230, 230, 230)
 
@@ -83,17 +83,17 @@ class PlayerActivityRenderer:
             font,
             header_scale,
             header_color,
-            2,
+            3,
             cv2.LINE_AA,
         )
         cv2.putText(
             image,
             f"Score: {score}",
-            (text_x, text_y + 34),
+            (text_x, text_y + 80),
             font,
             body_scale,
             (0, 215, 255),
-            1,
+            2,
             cv2.LINE_AA,
         )
 
@@ -101,7 +101,7 @@ class PlayerActivityRenderer:
             -self._MAX_ACTIONS:
         ]
         for index, action in enumerate(actions):
-            line_y = text_y + 78 + index * 46
+            line_y = text_y + 190 + index * 120
             self._draw_action(
                 action=action,
                 x=text_x,
@@ -126,9 +126,9 @@ class PlayerActivityRenderer:
             text,
             (x, y),
             cv2.FONT_HERSHEY_DUPLEX,
-            0.52,
+            1.56,
             (245, 245, 245),
-            1,
+            2,
             cv2.LINE_AA,
         )
 
@@ -141,7 +141,7 @@ class PlayerActivityRenderer:
     @staticmethod
     def _truncate(text: str, max_width: int) -> str:
         font = cv2.FONT_HERSHEY_DUPLEX
-        scale = 0.52
+        scale = 1.56
         while text and cv2.getTextSize(text, font, scale, 1)[0][0] > max_width:
             text = f"{text[:-4]}..."
         return text
