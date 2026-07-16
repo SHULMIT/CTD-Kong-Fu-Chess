@@ -7,12 +7,29 @@ import numpy as np
 from model.piece import Piece, PieceColor, PieceType
 from model.position import Position
 from board_io.text_board_parser import TextBoardParser
+from controller.board_mapper import BoardMapper
+from controller.controller import Controller
+from game.game_engine import GameEngine
+from realtime.duration_calculator import DurationCalculator
+from realtime.real_time_arbiter import RealTimeArbiter
+from rules.rule_engine import RuleEngine
 from run_ui_game_demo import FRAMES_PER_MOVE, _game_moves, render_game_demo
 from view.ui.animation.animation_repository import AnimationRepository
 from view.ui.animation.animation_state import AnimationState
 from view.ui.animation.piece_code_resolver import PieceCodeResolver
 from view.ui.graphics.img import Img
 from view.ui.scene.game_scene import GameScene
+
+
+def _create_scene(board):
+    game_engine = GameEngine(
+        board=board,
+        rule_engine=RuleEngine(),
+        arbiter=RealTimeArbiter(board),
+        duration_calculator=DurationCalculator(),
+    )
+    controller = Controller(game_engine, BoardMapper())
+    return GameScene(controller=controller, game_engine=game_engine)
 
 
 def test_piece_animation_is_resolved_loaded_and_cached():
@@ -51,9 +68,10 @@ def test_game_scene_draws_board_and_model_pieces():
             "wR wN wB wQ wK wB wN wR",
         ]
     )
-    scene = GameScene()
-    background_only = scene._canvas.canvas.img.copy()
+    scene = _create_scene(board)
+    scene._board_renderer.draw()
+    board_only = scene._canvas.canvas.img.copy()
 
-    scene.draw(board)
+    scene.draw()
 
-    assert np.any(scene._canvas.canvas.img != background_only)
+    assert np.any(scene._canvas.canvas.img != board_only)

@@ -1,0 +1,25 @@
+name: Update class code export
+
+on:
+  push:
+
+permissions:
+  contents: write
+
+jobs:
+  update-export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Generate the class export
+        run: python tools/class_code_exporter.py
+
+      - name: Commit the updated export when needed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add all_classes_code.txt
+          git diff --cached --quiet || git commit -m "chore: update class code export"
+          git push

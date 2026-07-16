@@ -1,14 +1,27 @@
+from dataclasses import dataclass
+
 from view.ui.graphics.img import Img
 
 
+@dataclass
 class SpriteAnimation:
-    """A loaded, ordered sequence of sprite frames."""
+    """
+    Represents a single animation of a game piece.
 
-    def __init__(self, frames: list[Img]):
-        if not frames:
-            raise ValueError("An animation needs at least one frame.")
-        self._frames = tuple(frames)
+    Example:
+        idle
+        move
+        jump
+    """
 
-    @property
-    def frames(self) -> tuple[Img, ...]:
-        return self._frames
+    name: str
+
+    frames: list[Img]
+
+    fps: int
+
+    loop: bool
+
+    next_state: str | None
+
+    speed: float

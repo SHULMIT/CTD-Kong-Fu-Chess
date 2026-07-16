@@ -1,18 +1,37 @@
-from model.piece import Piece
+from model.piece import Piece, PieceColor, PieceType
 
 
 class PieceCodeResolver:
-    """Maps a model piece to the code used by the sprite folders."""
+    """
+    Converts a logical chess piece into the corresponding
+    asset folder name.
+
+    Examples:
+        White King   -> KW
+        Black Pawn   -> PB
+        White Knight -> NW
+    """
 
     @staticmethod
     def resolve(piece: Piece) -> str:
-        color = "W" if piece.color.name == "WHITE" else "B"
-        piece_letter = {
-            "KING": "K",
-            "QUEEN": "Q",
-            "ROOK": "R",
-            "BISHOP": "B",
-            "KNIGHT": "N",
-            "PAWN": "P",
-        }[piece.type.name]
-        return f"{piece_letter}{color}"
+        """
+        Returns the asset folder code of the given piece.
+        """
+
+        piece_codes = {
+            (PieceType.KING, PieceColor.WHITE): "KW",
+            (PieceType.QUEEN, PieceColor.WHITE): "QW",
+            (PieceType.ROOK, PieceColor.WHITE): "RW",
+            (PieceType.BISHOP, PieceColor.WHITE): "BW",
+            (PieceType.KNIGHT, PieceColor.WHITE): "NW",
+            (PieceType.PAWN, PieceColor.WHITE): "PW",
+
+            (PieceType.KING, PieceColor.BLACK): "KB",
+            (PieceType.QUEEN, PieceColor.BLACK): "QB",
+            (PieceType.ROOK, PieceColor.BLACK): "RB",
+            (PieceType.BISHOP, PieceColor.BLACK): "BB",
+            (PieceType.KNIGHT, PieceColor.BLACK): "NB",
+            (PieceType.PAWN, PieceColor.BLACK): "PB",
+        }
+
+        return piece_codes[(piece.type, piece.color)]

@@ -1,5 +1,15 @@
 """
 Coordinates the game flow.
+
+Responsibilities:
+    - Expose a stable API to the rest of the application.
+    - Coordinate game services.
+    - Delegate move requests to the RequestMoveService.
+    - Delegate game state operations to the GameStateService.
+    - Delegate board queries to the GameQueryService.
+
+This class does not implement chess rules or movement logic.
+It acts as the central facade of the game layer.
 """
 
 from game.move_result import MoveReason, MoveResult
@@ -91,6 +101,22 @@ class GameEngine:
 
 	def has_piece(self, position: Position) -> bool:
 		return self._query_service.has_piece(position)
+
+	def get_legal_moves(
+		self,
+		source: Position,
+	) -> set[Position]:
+		"""
+		Returns all legal destination positions for the piece at source.
+		Used by the UI to display legal move indicators.
+		"""
+		return self._request_move_service.get_legal_moves(source)
+
+	def get_motions(self) -> tuple:
+		"""
+		Returns an immutable snapshot of all active motions for UI interpolation.
+		"""
+		return self._state_service.get_active_motions()
 
 	def get_board(self) -> Board:
 		return self._query_service.board

@@ -31,6 +31,10 @@ class MotionManager:
     def get_all(self) -> List[Motion]:
         return self._motions
 
+    def get_snapshot(self) -> tuple[Motion, ...]:
+        """Returns an immutable snapshot of active motions — safe for external use."""
+        return tuple(self._motions)
+
     def is_piece_moving(
         self,
         piece: Piece,

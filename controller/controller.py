@@ -1,24 +1,21 @@
-
 """
+controller.py
+
 Translates user input into game commands.
 
 Responsibilities:
-    - Receive user input events.
-    - Convert screen coordinates into board positions.
+    - Receive board positions from the UI layer.
     - Manage the currently selected piece.
-    - Interpret user clicks as selection or movement requests.
+    - Interpret clicks as selection or movement requests.
     - Delegate game actions to the GameEngine.
 
-This class does not implement chess rules.
-It only translates user interactions into game requests.
+This class does not know about pixels, screen coordinates, or UI layout.
+It works exclusively with board Position objects.
 """
 
-from controller.board_mapper import BoardMapper
 from errors.user_input_errors import (
     ClickEmptySourceError,
     ClickOutsideBoardError,
-    JumpEmptySourceError,
-    JumpOutsideBoardError,
     raise_for_move_reason,
 )
 from game.game_engine import GameEngine
@@ -27,31 +24,30 @@ from model.position import Position
 
 class Controller:
     """
-    Handles user input.
+    Handles board-level user input.
     """
 
     def __init__(
         self,
         game_engine: GameEngine,
-        board_mapper: BoardMapper,
     ):
         self._game_engine = game_engine
-        self._board_mapper = board_mapper
         self._selected_position: Position | None = None
 
-    def handle_click(
+    @property
+    def selected_position(self) -> Position | None:
+        return self._selected_position
+
+    def handle_position(
         self,
-        x: int,
-        y: int,
+        position: Position,
     ) -> None:
         """
-        Handles a mouse click.
-        """
+        Handles a board position click.
 
-        position = self._board_mapper.to_position(
-            x,
-            y,
-        )
+        First click selects a piece.
+        Second click attempts to move the selected piece to the target.
+        """
 
         if not self._game_engine.is_inside(position):
             self._selected_position = None
@@ -84,24 +80,19 @@ class Controller:
         if not result.is_accepted:
             raise_for_move_reason(result.reason)
 
-    def jump(
+    def jump_at(
         self,
-        x: int,
-        y: int,
+        position: Position,
     ) -> None:
         """
-        Marks the clicked piece as airborne.
+        Marks the piece at the given board position as airborne.
+
+        The caller (UI layer) is responsible for converting pixel
+        coordinates to a Position before calling this method.
         """
 
-        position = self._board_mapper.to_position(
-            x,
-            y,
-        )
-
-        if not self._game_engine.is_inside(position):
-            raise JumpOutsideBoardError()
-
-        if not self._game_engine.has_piece(position):
-            raise JumpEmptySourceError()
-
         self._game_engine.jump(position)
+
+    def deselect(self) -> None:
+        """Clears the current selection."""
+        self._selected_position = None

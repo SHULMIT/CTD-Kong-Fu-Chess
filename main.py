@@ -1,97 +1,15 @@
 """
-Program entry point.
+Application entry point.
 """
-#https://github.com/SHULMIT/CTD-Kong-Fu-Chess
 
-import sys
-
-from board_io.text_board_parser import TextBoardParser
-from config.constants import BOARD_SECTION_HEADER, COMMANDS_SECTION_HEADER
-from controller.board_mapper import BoardMapper
-from controller.controller import Controller
-from errors.user_input_errors import UserInputError
-from game.game_engine import GameEngine
-from realtime.duration_calculator import DurationCalculator
-from realtime.real_time_arbiter import RealTimeArbiter
-from rules.rule_engine import RuleEngine
-from runner.script_runner import ScriptRunner
-
-def _split_input(
-    lines: list[str],
-) -> tuple[list[str], list[str]]:
-    """
-    Splits the input into board lines and command lines.
-    """
-
-    board_lines = []
-    command_lines = []
-
-    current_section = None
-
-    for line in lines:
-
-        line = line.strip()
-
-        if line == BOARD_SECTION_HEADER:
-            current_section = board_lines
-            continue
-
-        if line == COMMANDS_SECTION_HEADER:
-            current_section = command_lines
-            continue
-
-        if current_section is not None:
-            current_section.append(line)
-
-    return board_lines, command_lines
+from app.game_factory import GameFactory
 
 
 def main() -> None:
-    """
-    Program entry point.
-    """
 
-    lines = sys.stdin.read().splitlines()
+    application = GameFactory.create()
 
-    board_lines, command_lines = _split_input(lines)
-
-    try:
-        board = TextBoardParser.parse(board_lines)
-
-    except ValueError as error:
-        print(error)
-        return
-
-    rule_engine = RuleEngine()
-
-    arbiter = RealTimeArbiter(board)
-
-    duration_calculator = DurationCalculator()
-
-    game_engine = GameEngine(
-        board=board,
-        rule_engine=rule_engine,
-        arbiter=arbiter,
-        duration_calculator=duration_calculator,
-    )
-
-    board_mapper = BoardMapper()
-
-    controller = Controller(
-        game_engine=game_engine,
-        board_mapper=board_mapper,
-    )
-
-    runner = ScriptRunner(
-        controller=controller,
-        game_engine=game_engine,
-    )
-
-    try:
-        runner.run(command_lines)
-
-    except UserInputError as error:
-        print(error)
+    application.run()
 
 
 if __name__ == "__main__":

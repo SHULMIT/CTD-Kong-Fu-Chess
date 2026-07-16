@@ -81,16 +81,18 @@ def _ensure_assets(window_width: int, window_height: int) -> None:
 
 def _draw_board_with_fallback(canvas: GameCanvas, layout: BoardLayout) -> None:
     try:
+        board_img = Img().read(
+            str(BOARD_PATH),
+            size=(layout.board_size, layout.board_size),
+        )
         renderer = BoardRenderer(
             canvas=canvas,
-            board_source=str(BOARD_PATH),
-            x=layout.board_x,
-            y=layout.board_y,
+            layout=layout,
+            board=board_img,
         )
         renderer.draw()
-        return
 
-    except ValueError:
+    except (ValueError, FileNotFoundError):
         # If the source board is too large for the current background,
         # resize it and draw directly as a safe fallback.
         resized_board = Img().read(

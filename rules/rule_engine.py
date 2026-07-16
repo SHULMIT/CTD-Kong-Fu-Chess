@@ -1,5 +1,14 @@
 """
-Validates chess moves using the movement rules.
+Validates chess move requests.
+
+Responsibilities:
+    - Perform general move validations.
+    - Select the appropriate movement rule for each piece.
+    - Delegate piece-specific validation to the matching rule.
+    - Return the validation result.
+
+This class coordinates move validation but does not implement
+the movement logic of individual chess pieces.
 """
 
 from model.board import Board

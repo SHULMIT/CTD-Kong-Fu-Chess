@@ -7,3 +7,4 @@ class AnimationState(Enum):
     JUMP = "jump"
     SHORT_REST = "short_rest"
     LONG_REST = "long_rest"
+    DEAD = "dead"

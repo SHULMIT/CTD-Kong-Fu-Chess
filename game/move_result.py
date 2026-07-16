@@ -1,5 +1,13 @@
 """
-Represents the result of requesting a move.
+Represents the outcome of a move request.
+
+Responsibilities:
+    - Store whether the move was accepted or rejected.
+    - Store the reason for the result.
+    - Provide convenient factory methods for creating move results.
+
+This class is used to communicate the outcome of a move request
+between the GameEngine and the Controller.
 """
 
 from dataclasses import dataclass

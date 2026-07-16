@@ -1,0 +1,4599 @@
+PROJECT CLASSES - FULL SOURCE CODE
+======================================================================
+Test files and helper files are excluded.
+
+======================================================================
+FILE: app/game_application.py
+======================================================================
+from view.ui.scene.game_scene import GameScene
+from view.ui.loop.game_loop import GameLoop
+
+
+class GameApplication:
+
+    def __init__(
+        self,
+        scene: GameScene,
+    ):
+
+        self._scene = scene
+        self._running = True
+
+    def run(self) -> None:
+        """Runs the interactive UI until the player closes it."""
+        self._render()
+        self._scene.bind_input()
+
+        loop = GameLoop(
+            update=self._update,
+            render=self._render,
+            is_running=lambda: self._running,
+        )
+        loop.run()
+
+        self._scene.canvas.close()
+
+    def _update(self, _delta_time: float) -> None:
+        key = self._scene.canvas.poll_events()
+        self._running = (
+            key != 27
+            and self._scene.canvas.is_open()
+        )
+        # After game over, stop advancing the simulation —
+        # just keep the GAME OVER screen visible.
+        if self._scene.is_game_over:
+            return
+        self._scene.update(_delta_time)
+
+    def _render(self) -> None:
+        self._scene.draw()
+        self._scene.canvas.present()
+
+======================================================================
+FILE: app/game_factory.py
+======================================================================
+"""
+game_factory.py
+
+Builds the game application.
+"""
+
+from board_io.board_loader import BoardLoader
+
+from config.constants import DEFAULT_BOARD_PATH
+
+from controller.controller import Controller
+
+from app.game_application import GameApplication
+
+from game.game_engine import GameEngine
+
+from realtime.duration_calculator import DurationCalculator
+from realtime.real_time_arbiter import RealTimeArbiter
+
+from rules.rule_engine import RuleEngine
+
+from view.ui.scene.game_scene import GameScene
+
+
+class GameFactory:
+
+    @staticmethod
+    def create() -> GameApplication:
+
+        board = BoardLoader.load(
+            DEFAULT_BOARD_PATH
+        )
+
+        rule_engine = RuleEngine()
+
+        arbiter = RealTimeArbiter(
+            board
+        )
+
+        duration_calculator = DurationCalculator()
+
+        game_engine = GameEngine(
+            board=board,
+            rule_engine=rule_engine,
+            arbiter=arbiter,
+            duration_calculator=duration_calculator,
+        )
+
+        controller = Controller(
+            game_engine=game_engine,
+        )
+
+        scene = GameScene(
+            controller=controller,
+            game_engine=game_engine,
+        )
+
+        return GameApplication(
+            scene=scene
+        )
+
+======================================================================
+FILE: board_io/board_loader.py
+======================================================================
+from pathlib import Path
+
+from board_io.text_board_parser import TextBoardParser
+from model.board import Board
+
+
+class BoardLoader:
+    """
+    Loads a board from a text file.
+
+    Responsibilities:
+        - Read a board file.
+        - Parse it into a Board object.
+    """
+
+    @staticmethod
+    def load(
+        path: str | Path,
+    ) -> Board:
+
+        with open(
+            path,
+            encoding="utf-8",
+        ) as file:
+
+            board_lines = file.read().splitlines()
+
+        return TextBoardParser.parse(
+            board_lines
+        )
+
+======================================================================
+FILE: board_io/text_board_formatter.py
+======================================================================
+﻿from model.board import Board
+from model.position import Position
+from model.piece_mapper import PieceMapper
+
+
+class TextBoardFormatter:
+    """
+    Converts a Board object into its textual representation.
+    """
+
+    @staticmethod
+    def format(board: Board) -> str:
+        lines = []
+
+        for row in range(board.height):
+            line_tokens = []
+
+            for column in range(board.width):
+                position = Position(row, column)
+                piece = board.get_piece(position)
+                line_tokens.append(PieceMapper.to_code(piece))
+
+            lines.append(" ".join(line_tokens))
+
+        return "\n".join(lines)
+
+======================================================================
+FILE: board_io/text_board_parser.py
+======================================================================
+from config.constants import (
+    EMPTY_SQUARE,
+    VALID_COLORS,
+    VALID_PIECES,
+    ERR_UNKNOWN_TOKEN,
+    ERR_ROW_WIDTH_MISMATCH,
+)
+
+from model.board import Board
+from model.position import Position
+from model.piece_factory import PieceFactory
+from model.piece_mapper import PieceMapper
+
+
+class TextBoardParser:
+    """
+    Parses a textual board representation into a Board object.
+
+    Responsibilities:
+        - Validate the input.
+        - Convert text tokens into Piece objects.
+        - Build the Board.
+    """
+
+    @staticmethod
+    def _is_valid_token(token: str) -> bool:
+        """
+        Returns True if the given token is a valid board cell.
+        """
+
+        if token == EMPTY_SQUARE:
+            return True
+
+        return (
+            len(token) == 2
+            and token[0] in VALID_COLORS
+            and token[1] in VALID_PIECES
+        )
+
+    @staticmethod
+    def parse(board_lines: list[str]) -> Board:
+        """
+        Creates a Board from its textual representation.
+        """
+
+        if not board_lines:
+            return Board([])
+
+        grid = []
+        expected_width = None
+
+        for row, line in enumerate(board_lines):
+
+            tokens = line.strip().split()
+
+            if not tokens:
+                continue
+
+            if expected_width is None:
+                expected_width = len(tokens)
+
+            elif len(tokens) != expected_width:
+                raise ValueError(ERR_ROW_WIDTH_MISMATCH)
+
+            board_row = []
+
+            for column, token in enumerate(tokens):
+
+                if not TextBoardParser._is_valid_token(token):
+                    raise ValueError(ERR_UNKNOWN_TOKEN)
+
+                position = Position(row, column)
+
+                piece_data = PieceMapper.from_code(token)
+
+                piece = PieceFactory.create_piece(
+                    piece_data=piece_data,
+                    position=position,
+                )
+
+                board_row.append(piece)
+
+            grid.append(board_row)
+
+        return Board(grid)
+
+======================================================================
+FILE: controller/board_mapper.py
+======================================================================
+"""
+Maps screen coordinates to board positions.
+"""
+
+from config.constants import CELL_SIZE
+from model.position import Position
+
+
+class BoardMapper:
+    """
+    Converts screen coordinates to board positions.
+    """
+
+    def to_position(
+        self,
+        x: int,
+        y: int,
+    ) -> Position:
+        """
+        Converts pixel coordinates to a board position.
+        """
+
+        row = y // CELL_SIZE
+        column = x // CELL_SIZE
+
+        return Position(
+            row=row,
+            column=column,
+        )
+
+======================================================================
+FILE: controller/controller.py
+======================================================================
+"""
+controller.py
+
+Translates user input into game commands.
+
+Responsibilities:
+    - Receive board positions from the UI layer.
+    - Manage the currently selected piece.
+    - Interpret clicks as selection or movement requests.
+    - Delegate game actions to the GameEngine.
+
+This class does not know about pixels, screen coordinates, or UI layout.
+It works exclusively with board Position objects.
+"""
+
+from errors.user_input_errors import (
+    ClickEmptySourceError,
+    ClickOutsideBoardError,
+    raise_for_move_reason,
+)
+from game.game_engine import GameEngine
+from model.position import Position
+
+
+class Controller:
+    """
+    Handles board-level user input.
+    """
+
+    def __init__(
+        self,
+        game_engine: GameEngine,
+    ):
+        self._game_engine = game_engine
+        self._selected_position: Position | None = None
+
+    @property
+    def selected_position(self) -> Position | None:
+        return self._selected_position
+
+    def handle_position(
+        self,
+        position: Position,
+    ) -> None:
+        """
+        Handles a board position click.
+
+        First click selects a piece.
+        Second click attempts to move the selected piece to the target.
+        """
+
+        if not self._game_engine.is_inside(position):
+            self._selected_position = None
+            raise ClickOutsideBoardError()
+
+        if self._selected_position is None:
+            if not self._game_engine.has_piece(position):
+                raise ClickEmptySourceError()
+
+            self._selected_position = position
+            return
+
+        if self._game_engine.has_piece(position):
+            selected_piece = self._game_engine.get_piece(
+                self._selected_position
+            )
+            target_piece = self._game_engine.get_piece(position)
+
+            if selected_piece.color == target_piece.color:
+                self._selected_position = position
+                return
+
+        result = self._game_engine.request_move(
+            self._selected_position,
+            position,
+        )
+
+        self._selected_position = None
+
+        if not result.is_accepted:
+            raise_for_move_reason(result.reason)
+
+    def jump_at(
+        self,
+        position: Position,
+    ) -> None:
+        """
+        Marks the piece at the given board position as airborne.
+
+        The caller (UI layer) is responsible for converting pixel
+        coordinates to a Position before calling this method.
+        """
+
+        self._game_engine.jump(position)
+
+    def deselect(self) -> None:
+        """Clears the current selection."""
+        self._selected_position = None
+
+======================================================================
+FILE: errors/user_input_errors.py
+======================================================================
+"""
+Defines user-facing input errors for invalid commands and invalid interactions.
+"""
+
+from config.constants import (
+    ERR_CLICK_EMPTY_SOURCE,
+    ERR_CLICK_OUTSIDE_BOARD,
+    ERR_EMPTY_COMMAND,
+    ERR_EMPTY_SOURCE,
+    ERR_FRIENDLY_DESTINATION,
+    ERR_GAME_OVER,
+    ERR_ILLEGAL_PIECE_MOVE,
+    ERR_JUMP_EMPTY_SOURCE,
+    ERR_JUMP_OUTSIDE_BOARD,
+    ERR_MOTION_IN_PROGRESS,
+    ERR_UNKNOWN_COMMAND,
+)
+from game.move_result import MoveReason as GameMoveReason
+from rules.move_reason import MoveReason as RuleMoveReason
+
+
+class UserInputError(Exception):
+    """
+    Base error for invalid user input that should be shown to the user.
+    """
+
+
+class EmptyCommandError(UserInputError):
+    def __init__(self):
+        super().__init__(ERR_EMPTY_COMMAND)
+
+
+class UnknownCommandError(UserInputError):
+    def __init__(self):
+        super().__init__(ERR_UNKNOWN_COMMAND)
+
+
+class ClickOutsideBoardError(UserInputError):
+    def __init__(self):
+        super().__init__(ERR_CLICK_OUTSIDE_BOARD)
+
+
+class ClickEmptySourceError(UserInputError):
+    def __init__(self):
+        super().__init__(ERR_CLICK_EMPTY_SOURCE)
+
+
+class JumpOutsideBoardError(UserInputError):
+    def __init__(self):
+        super().__init__(ERR_JUMP_OUTSIDE_BOARD)
+
+
+class JumpEmptySourceError(UserInputError):
+    def __init__(self):
+        super().__init__(ERR_JUMP_EMPTY_SOURCE)
+
+
+class GameOverError(UserInputError):
+    def __init__(self):
+        super().__init__(ERR_GAME_OVER)
+
+
+class MotionInProgressError(UserInputError):
+    def __init__(self):
+        super().__init__(ERR_MOTION_IN_PROGRESS)
+
+
+class EmptySourceError(UserInputError):
+    def __init__(self):
+        super().__init__(ERR_EMPTY_SOURCE)
+
+
+class FriendlyDestinationError(UserInputError):
+    def __init__(self):
+        super().__init__(ERR_FRIENDLY_DESTINATION)
+
+
+class IllegalPieceMoveError(UserInputError):
+    def __init__(self):
+        super().__init__(ERR_ILLEGAL_PIECE_MOVE)
+
+
+def raise_for_move_reason(reason: GameMoveReason | RuleMoveReason) -> None:
+    """
+    Converts a rejected move reason into a user-facing exception.
+    """
+
+    reason_to_error = {
+        GameMoveReason.GAME_OVER: GameOverError,
+        GameMoveReason.MOTION_IN_PROGRESS: MotionInProgressError,
+        GameMoveReason.EMPTY_SOURCE: EmptySourceError,
+        GameMoveReason.FRIENDLY_DESTINATION: FriendlyDestinationError,
+        GameMoveReason.ILLEGAL_PIECE_MOVE: IllegalPieceMoveError,
+        RuleMoveReason.OUTSIDE_BOARD: ClickOutsideBoardError,
+        RuleMoveReason.EMPTY_SOURCE: EmptySourceError,
+        RuleMoveReason.FRIENDLY_DESTINATION: FriendlyDestinationError,
+        RuleMoveReason.ILLEGAL_PIECE_MOVE: IllegalPieceMoveError,
+    }
+
+    error_type = reason_to_error.get(reason)
+
+    if error_type is None:
+        raise UserInputError(str(reason.value))
+
+    raise error_type()
+
+======================================================================
+FILE: game/game_engine.py
+======================================================================
+"""
+Coordinates the game flow.
+
+Responsibilities:
+    - Expose a stable API to the rest of the application.
+    - Coordinate game services.
+    - Delegate move requests to the RequestMoveService.
+    - Delegate game state operations to the GameStateService.
+    - Delegate board queries to the GameQueryService.
+
+This class does not implement chess rules or movement logic.
+It acts as the central facade of the game layer.
+"""
+
+from game.move_result import MoveReason, MoveResult
+from game.game_query_service import GameQueryService
+from game.game_state_service import GameStateService
+from game.request_move_service import RequestMoveService
+from errors.user_input_errors import JumpEmptySourceError
+from model.board import Board
+from model.position import Position
+from realtime.duration_calculator import DurationCalculator
+from realtime.real_time_arbiter import RealTimeArbiter
+from rules.rule_engine import RuleEngine
+from model.piece import Piece
+
+class GameEngine:
+	"""
+	Coordinates game services and exposes a stable facade API.
+	"""
+
+	def __init__(
+		self,
+		board: Board,
+		rule_engine: RuleEngine,
+		arbiter: RealTimeArbiter,
+		duration_calculator: DurationCalculator,
+	):
+		self._query_service = GameQueryService(board)
+		self._state_service = GameStateService(arbiter)
+		self._request_move_service = RequestMoveService(
+			board=board,
+			rule_engine=rule_engine,
+			arbiter=arbiter,
+			duration_calculator=duration_calculator,
+		)
+
+	@property
+	def board(self) -> Board:
+		return self._query_service.board
+
+	@property
+	def game_over(self) -> bool:
+		return self._state_service.game_over
+
+	def request_move(
+		self,
+		source: Position,
+		target: Position,
+	) -> MoveResult:
+		"""
+		Attempts to perform a move.
+		"""
+
+		if self.game_over:
+			return MoveResult.rejected(
+				MoveReason.GAME_OVER
+			)
+
+		return self._request_move_service.request_move(
+			source=source,
+			target=target,
+		)
+
+	def wait(
+		self,
+		milliseconds: int,
+	) -> None:
+		self._state_service.wait(milliseconds)
+
+	def jump(
+		self,
+		position: Position,
+	) -> None:
+		"""
+		Marks a piece as airborne.
+		"""
+
+		piece = self._query_service.get_piece(position)
+
+		if not isinstance(piece, Piece):
+			raise JumpEmptySourceError()
+
+		self._state_service.jump_piece(piece)
+
+	def is_inside(self, position: Position) -> bool:
+		return self._query_service.is_inside(position)
+
+	def get_piece(self, position: Position) -> object | None:
+		return self._query_service.get_piece(position)
+
+	def has_piece(self, position: Position) -> bool:
+		return self._query_service.has_piece(position)
+
+	def get_legal_moves(
+		self,
+		source: Position,
+	) -> set[Position]:
+		"""
+		Returns all legal destination positions for the piece at source.
+		Used by the UI to display legal move indicators.
+		"""
+		return self._request_move_service.get_legal_moves(source)
+
+	def get_motions(self) -> tuple:
+		"""
+		Returns an immutable snapshot of all active motions for UI interpolation.
+		"""
+		return self._state_service.get_active_motions()
+
+	def get_board(self) -> Board:
+		return self._query_service.board
+
+======================================================================
+FILE: game/game_query_service.py
+======================================================================
+"""
+Provides read-only access to the game state.
+
+Responsibilities:
+    - Expose board query operations.
+    - Retrieve board and piece information.
+    - Check board boundaries.
+    - Check whether a square contains a piece.
+
+This service performs read-only operations and never modifies the game state.
+It is used by the GameEngine to separate queries from game actions.
+"""
+
+from model.board import Board
+from model.position import Position
+
+
+class GameQueryService:
+    """
+    Owns non-mutating game queries for controller and runner usage.
+    """
+
+    def __init__(
+        self,
+        board: Board,
+    ):
+        self._board = board
+
+    @property
+    def board(self) -> Board:
+        """
+        Returns board reference for view/formatting.
+        """
+
+        return self._board
+
+    def is_inside(
+        self,
+        position: Position,
+    ) -> bool:
+        """
+        Returns whether a position is inside board bounds.
+        """
+
+        return self._board.is_inside(position)
+
+    def get_piece(
+        self,
+        position: Position,
+    ):
+        """
+        Returns the board cell content at position.
+        """
+
+        return self._board.get_piece(position)
+
+    def has_piece(
+        self,
+        position: Position,
+    ) -> bool:
+        """
+        Returns whether a non-empty piece exists at position.
+        """
+
+        piece = self._board.get_piece(position)
+        return piece is not None and piece != self._board.EMPTY_CELL
+
+======================================================================
+FILE: game/game_state_service.py
+======================================================================
+"""
+Manages the mutable game state.
+
+Responsibilities:
+    - Track whether the game has ended.
+    - Advance the game simulation over time.
+    - Update the game state after time-based events.
+    - Delegate time-related actions to the RealTimeArbiter.
+
+This service is responsible for game state transitions,
+but it does not validate or execute chess moves.
+"""
+
+from model.piece import Piece
+from realtime.real_time_arbiter import RealTimeArbiter
+
+
+class GameStateService:
+    """
+    Owns game-over state and time-based state transitions.
+    """
+
+    def __init__(
+        self,
+        arbiter: RealTimeArbiter,
+    ):
+        self._arbiter = arbiter
+        self._game_over = False
+
+    @property
+    def game_over(self) -> bool:
+        """
+        Returns whether the game has ended.
+        """
+
+        return self._game_over
+
+    def mark_game_over(self) -> None:
+        """
+        Marks game as ended.
+        """
+
+        self._game_over = True
+
+    def wait(
+        self,
+        milliseconds: int,
+    ) -> None:
+        """
+        Advances simulation and updates game-over state.
+        """
+
+        self._arbiter.advance_time(milliseconds)
+
+        if self._arbiter.consume_captured_king_flag():
+            self._game_over = True
+
+    def get_active_motions(self) -> tuple:
+        """Returns an immutable snapshot of all active motions."""
+        return self._arbiter.get_active_motions()
+
+    def jump_piece(
+        self,
+        piece: Piece,
+    ) -> None:
+        """
+        Delegates piece jump to real-time arbiter.
+        """
+
+        self._arbiter.jump(piece)
+
+======================================================================
+FILE: game/history/move_entry.py
+======================================================================
+from dataclasses import dataclass
+
+
+@dataclass(slots=True)
+class MoveEntry:
+    """
+    Represents a single move displayed in the UI.
+    """
+
+    time: float
+    player: str
+    piece: str
+    source: str
+    target: str
+
+======================================================================
+FILE: game/history/move_history.py
+======================================================================
+"""
+move_history.py
+
+Stores the move history displayed by the UI.
+
+Responsibilities:
+    - Store executed moves.
+    - Provide access to the move history.
+"""
+from game.history.move_entry import MoveEntry
+class MoveHistory(list[MoveEntry]):
+    """
+    Stores the chronological move history.
+    """
+
+    def add(
+        self,
+        entry: MoveEntry,
+    ) -> None:
+
+        self.append(entry)
+
+    def clear_history(self) -> None:
+
+        self.clear()
+
+======================================================================
+FILE: game/move_result.py
+======================================================================
+"""
+Represents the outcome of a move request.
+
+Responsibilities:
+    - Store whether the move was accepted or rejected.
+    - Store the reason for the result.
+    - Provide convenient factory methods for creating move results.
+
+This class is used to communicate the outcome of a move request
+between the GameEngine and the Controller.
+"""
+
+from dataclasses import dataclass
+from enum import Enum
+
+
+class MoveReason(Enum):
+    """
+    Possible results returned by GameEngine.
+    """
+
+    OK = "ok"
+
+    GAME_OVER = "game_over"
+
+    MOTION_IN_PROGRESS = "motion_in_progress"
+
+    OUTSIDE_BOARD = "outside_board"
+
+    EMPTY_SOURCE = "empty_source"
+
+    FRIENDLY_DESTINATION = "friendly_destination"
+
+    ILLEGAL_PIECE_MOVE = "illegal_piece_move"
+
+
+@dataclass(frozen=True)
+class MoveResult:
+    """
+    Represents the result of requesting a move.
+    """
+
+    is_accepted: bool
+    reason: MoveReason
+
+    @classmethod
+    def accepted(cls) -> "MoveResult":
+        """
+        Creates a successful move result.
+        """
+        return cls(
+            is_accepted=True,
+            reason=MoveReason.OK,
+        )
+
+    @classmethod
+    def rejected(cls, reason: MoveReason) -> "MoveResult":
+        """
+        Creates a rejected move result.
+        """
+        return cls(
+            is_accepted=False,
+            reason=reason,
+        )
+
+======================================================================
+FILE: game/request_move_service.py
+======================================================================
+
+"""
+Processes move requests.
+
+Responsibilities:
+    - Validate requested moves.
+    - Calculate movement duration.
+    - Schedule legal piece motions.
+    - Return the outcome of the move request.
+
+This service is responsible only for processing move requests.
+It does not manage the game state or implement chess rules.
+"""
+
+from game.move_result import MoveResult
+from model.board import Board
+from model.position import Position
+from realtime.duration_calculator import DurationCalculator
+from realtime.real_time_arbiter import RealTimeArbiter
+from rules.rule_engine import RuleEngine
+
+
+class RequestMoveService:
+    """
+    Owns a single responsibility: process legal move requests.
+
+    This service does not know about game-over lifecycle decisions.
+    """
+
+    def __init__(
+        self,
+        board: Board,
+        rule_engine: RuleEngine,
+        arbiter: RealTimeArbiter,
+        duration_calculator: DurationCalculator,
+    ):
+        self._board = board
+        self._rule_engine = rule_engine
+        self._arbiter = arbiter
+        self._duration_calculator = duration_calculator
+
+    def get_legal_moves(
+        self,
+        source: Position,
+    ) -> set[Position]:
+        """
+        Returns all legal destination positions for the piece at source.
+        """
+        from model.piece import Piece
+        piece = self._board.get_piece(source)
+        if not isinstance(piece, Piece):
+            return set()
+        return self._rule_engine.get_legal_moves(self._board, piece)
+
+    def request_move(
+        self,
+        source: Position,
+        target: Position,
+    ) -> MoveResult:
+        """
+        Validates and schedules a move.
+        """
+
+        validation = self._rule_engine.validate_move(
+            self._board,
+            source,
+            target,
+        )
+
+        if not validation.is_valid:
+            return MoveResult.rejected(validation.reason)
+
+        piece = self._board.get_piece(source)
+        duration = self._duration_calculator.calculate(
+            piece,
+            source,
+            target,
+        )
+
+        self._arbiter.start_motion(
+            piece=piece,
+            source=source,
+            target=target,
+        duration=duration,
+        )
+
+        return MoveResult.accepted()
+
+======================================================================
+FILE: model/board.py
+======================================================================
+# model/board.py
+
+from config.constants import EMPTY_SQUARE
+from model.position import Position
+
+class Board:
+    EMPTY_CELL = EMPTY_SQUARE
+
+    def __init__(
+        self,
+        rows: list[list[object | None]],
+    ):
+        self._rows = rows
+
+    @property
+    def width(self) -> int:
+        return len(self._rows[0]) if self._rows else 0
+
+    @property
+    def height(self) -> int:
+        return len(self._rows)
+
+    def is_inside(self, position: Position) -> bool:
+        return (
+            0 <= position.row < self.height
+            and
+            0 <= position.column < self.width
+        )
+
+    def get_piece(self, position: Position) -> object | None:
+        if not self.is_inside(position):
+            raise IndexError("Position outside board.")
+        return self._rows[position.row][position.column]
+
+    def set_piece(
+        self,
+        position: Position,
+        piece: object | None,
+    ) -> None:
+        if not self.is_inside(position):
+            raise IndexError("Position outside board.")
+        self._rows[position.row][position.column] = piece
+
+
+    def move_piece(self, source: Position, target: Position) -> None:
+        """
+        Moves a piece from source to target.
+
+        Assumes the move has already been validated.
+        """
+        piece = self.get_piece(source)
+
+        if piece == self.EMPTY_CELL:
+            raise ValueError("Source cell is empty.")
+
+        self.set_piece(target, piece)
+        self.set_piece(source, self.EMPTY_CELL)
+
+        piece.position = target
+
+======================================================================
+FILE: model/clock.py
+======================================================================
+class Clock:
+    def __init__(self):
+        self._time_ms = 0
+
+    @property
+    def current_time(self):
+        return self._time_ms
+
+    def tick(self, ms):
+        if ms < 0:
+            raise ValueError("Time cannot go backwards")
+        self._time_ms += ms
+
+======================================================================
+FILE: model/piece.py
+======================================================================
+"""
+piece.py
+
+Contains the Piece entity and all enums related to chess pieces.
+
+The Piece class belongs to the model layer and stores only the
+logical state of a chess piece.
+
+Movement logic is implemented in the rules package.
+"""
+
+from enum import Enum, auto
+
+from model.position import Position
+
+
+class PieceColor(Enum):
+    """Represents the two piece colors."""
+
+    WHITE = auto()
+    BLACK = auto()
+
+
+class PieceType(Enum):
+    """Represents all supported chess piece types."""
+
+    KING = auto()
+    QUEEN = auto()
+    ROOK = auto()
+    BISHOP = auto()
+    KNIGHT = auto()
+    PAWN = auto()
+
+
+class PieceState(Enum):
+    """Represents the current life-cycle state of a piece."""
+
+    IDLE = auto()
+    MOVING = auto()
+    CAPTURED = auto()
+    AIRBORNE = auto()
+
+
+
+class Piece:
+    """
+    Represents a logical chess piece.
+
+    Responsibilities:
+        - Store the piece identity.
+        - Store the piece type.
+        - Store the piece color.
+        - Store the current board position.
+        - Store the current life-cycle state.
+
+    This class does NOT contain movement rules.
+    """
+
+    def __init__(
+        self,
+        piece_id: int,
+        piece_type: PieceType,
+        color: PieceColor,
+        position: Position,
+        state: PieceState = PieceState.IDLE,
+    ):
+        self._id = piece_id
+        self._type = piece_type
+        self._color = color
+        self._position = position
+        self._state = state
+
+    @property
+    def id(self) -> int:
+        return self._id
+
+    @property
+    def type(self) -> PieceType:
+        return self._type
+
+    @property
+    def color(self) -> PieceColor:
+        return self._color
+
+    @property
+    def position(self) -> Position:
+        return self._position
+
+    @property
+    def state(self) -> PieceState:
+        return self._state
+
+    @position.setter
+    def position(self, new_position: Position):
+        self._position = new_position
+
+    @state.setter
+    def state(self, new_state: PieceState):
+        self._state = new_state
+
+    @type.setter
+    def type(
+        self,
+        new_type: PieceType,
+    ) -> None:
+        self._type = new_type    
+
+    def __repr__(self):
+        return (
+            f"Piece("
+            f"id={self._id}, "
+            f"type={self._type.name}, "
+            f"color={self._color.name}, "
+            f"position={self._position}, "
+            f"state={self._state.name})"
+        )
+
+======================================================================
+FILE: model/piece_factory.py
+======================================================================
+"""
+Factory responsible for creating Piece objects.
+"""
+
+from model.position import Position
+from model.piece import Piece, PieceState
+
+
+class PieceFactory:
+    """
+    Responsible for creating Piece objects.
+
+    It only creates Piece instances from already parsed data.
+    """
+
+    _next_piece_id = 1
+
+    @classmethod
+    def create_piece(
+        cls,
+        piece_data,
+        position: Position,
+    ) -> Piece | None:
+        """
+        Creates a Piece object.
+
+        Args:
+            piece_data:
+                Result returned by PieceMapper.from_code().
+                None means the board cell is empty.
+            position:
+                Piece position on the board.
+
+        Returns:
+            Piece or None.
+        """
+
+        if piece_data is None:
+            return None
+
+        piece_type, color = piece_data
+
+        piece = Piece(
+            piece_id=cls._next_piece_id,
+            piece_type=piece_type,
+            color=color,
+            position=position,
+            state=PieceState.IDLE,
+        )
+
+        cls._next_piece_id += 1
+
+        return piece
+
+======================================================================
+FILE: model/piece_mapper.py
+======================================================================
+"""
+Converts between board text representation and piece data.
+"""
+
+from config.constants import EMPTY_SQUARE
+from model.piece import Piece, PieceColor, PieceType
+
+
+PIECE_COLOR_FROM_CODE = {
+    "w": PieceColor.WHITE,
+    "b": PieceColor.BLACK,
+}
+
+PIECE_CODE_FROM_COLOR = {
+    PieceColor.WHITE: "w",
+    PieceColor.BLACK: "b",
+}
+
+PIECE_TYPE_FROM_CODE = {
+    "K": PieceType.KING,
+    "Q": PieceType.QUEEN,
+    "R": PieceType.ROOK,
+    "B": PieceType.BISHOP,
+    "N": PieceType.KNIGHT,
+    "P": PieceType.PAWN,
+}
+
+PIECE_CODE_FROM_TYPE = {
+    PieceType.KING: "K",
+    PieceType.QUEEN: "Q",
+    PieceType.ROOK: "R",
+    PieceType.BISHOP: "B",
+    PieceType.KNIGHT: "N",
+    PieceType.PAWN: "P",
+}
+
+
+class PieceMapper:
+    """
+    Converts between textual board codes and Piece information.
+    """
+
+    @staticmethod
+    def color_from_code(code: str) -> PieceColor:
+        """Converts 'w' or 'b' into PieceColor."""
+        return PIECE_COLOR_FROM_CODE[code]
+
+    @staticmethod
+    def type_from_code(code: str) -> PieceType:
+        """Converts 'P', 'R', ... into PieceType."""
+        return PIECE_TYPE_FROM_CODE[code]
+
+    @staticmethod
+    def from_code(code: str) -> tuple[PieceType, PieceColor] | None:
+        """Converts a textual board token like 'wP' into piece metadata."""
+        if code == EMPTY_SQUARE:
+            return None
+
+        return (
+            PIECE_TYPE_FROM_CODE[code[1]],
+            PIECE_COLOR_FROM_CODE[code[0]],
+        )
+
+    @staticmethod
+    def to_code(piece: Piece | None) -> str:
+        """
+        Converts a Piece into its board representation.
+        """
+
+        if piece is None or piece == EMPTY_SQUARE:
+            return EMPTY_SQUARE
+
+        return (
+            PIECE_CODE_FROM_COLOR[piece.color]
+            + PIECE_CODE_FROM_TYPE[piece.type]
+        )
+
+======================================================================
+FILE: model/position.py
+======================================================================
+﻿from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Position:
+    """
+    Represents a logical position on the board.
+
+    This class is a value object that stores only
+    the row and column of a board cell.
+    """
+
+    row: int
+    column: int
+
+    def offset(self, row_offset: int, column_offset: int):
+        """
+        Returns a new Position translated by the given offsets.
+        """
+
+        return Position(
+            self.row + row_offset,
+            self.column + column_offset,
+        )
+
+    def __str__(self):
+        return f"({self.row}, {self.column})"
+
+======================================================================
+FILE: realtime/airborne_manager.py
+======================================================================
+"""
+Tracks and resolves airborne piece timers.
+"""
+
+from model.piece import Piece, PieceState
+
+
+class AirborneManager:
+    """
+    Owns the airborne timer state and landing lifecycle.
+
+    This service has a single responsibility:
+    manage jump timers and transition pieces back to IDLE on landing.
+    """
+
+    def __init__(
+        self,
+        jump_duration_milliseconds: int,
+    ):
+        self._jump_duration_milliseconds = jump_duration_milliseconds
+        self._airborne_timers: dict[Piece, int] = {}
+
+    def has_airborne_pieces(self) -> bool:
+        """
+        Returns whether there are active airborne timers.
+        """
+
+        return len(self._airborne_timers) > 0
+
+    def jump(
+        self,
+        piece: Piece,
+    ) -> None:
+        """
+        Starts (or refreshes) airborne state for a piece.
+        """
+
+        piece.state = PieceState.AIRBORNE
+        self._airborne_timers[piece] = self._jump_duration_milliseconds
+
+    def advance_time(
+        self,
+        milliseconds: int,
+    ) -> None:
+        """
+        Advances all airborne timers by the same time slice.
+        """
+
+        for piece in list(self._airborne_timers):
+            self._airborne_timers[piece] -= milliseconds
+
+    def time_until_next_landing(self) -> int | None:
+        """
+        Returns the shortest remaining timer among airborne pieces.
+        """
+
+        if not self._airborne_timers:
+            return None
+
+        return min(self._airborne_timers.values())
+
+    def land_finished_pieces(self) -> None:
+        """
+        Lands all pieces whose airborne timer completed.
+        """
+
+        for piece, remaining_time in list(self._airborne_timers.items()):
+            if remaining_time > 0:
+                continue
+
+            # A captured piece may already have a terminal state.
+            if piece.state == PieceState.AIRBORNE:
+                piece.state = PieceState.IDLE
+
+            self._airborne_timers.pop(piece)
+
+    def remove_piece(
+        self,
+        piece: Piece,
+    ) -> None:
+        """
+        Removes a piece from airborne tracking.
+        """
+
+        self._airborne_timers.pop(piece, None)
+
+======================================================================
+FILE: realtime/collision_resolver.py
+======================================================================
+"""
+Resolves a single motion step against board occupancy and collision rules.
+"""
+
+from model.board import Board
+from model.piece import Piece, PieceState
+from realtime.motion import Motion
+from realtime.piece_lifecycle_service import PieceLifecycleService
+
+
+class CollisionResolver:
+    """
+    Applies the collision policy for one motion step.
+
+    Rules encoded here:
+    - Later enemy arrival captures earlier arrival on same square.
+    - Later friendly arrival gets stuck on previous square.
+    - Airborne defender captures the arriving attacker.
+    """
+
+    def __init__(
+        self,
+        board: Board,
+        lifecycle: PieceLifecycleService,
+    ):
+        self._board = board
+        self._lifecycle = lifecycle
+
+    def resolve_step(
+        self,
+        motion: Motion,
+    ) -> None:
+        """
+        Resolves one potential cell transition for the given motion.
+        """
+
+        moving_piece = motion.piece
+        source_position = motion.current_position
+        target_position = motion.next_position
+
+        if target_position is None:
+            motion.stop()
+            return
+
+        target_piece = self._board.get_piece(target_position)
+
+        if isinstance(target_piece, Piece):
+            if target_piece.state == PieceState.AIRBORNE:
+                self._lifecycle.capture_piece(
+                    piece=moving_piece,
+                    position=source_position,
+                )
+                motion.stop()
+                return
+
+            if moving_piece.color == target_piece.color:
+                moving_piece.state = PieceState.IDLE
+                motion.stop()
+                return
+
+            self._lifecycle.capture_piece(
+                piece=target_piece,
+                position=target_position,
+            )
+
+        self._board.set_piece(source_position, self._board.EMPTY_CELL)
+        self._board.set_piece(target_position, moving_piece)
+        moving_piece.position = target_position
+        motion.step_forward()
+
+        if motion.is_finished():
+            self._lifecycle.finalize_finished_motion_piece(moving_piece)
+
+======================================================================
+FILE: realtime/duration_calculator.py
+======================================================================
+"""
+Calculates piece movement duration in milliseconds.
+"""
+
+from config.constants import MILLISECONDS_PER_CELL
+from model.piece import Piece, PieceType
+from model.position import Position
+
+
+class DurationCalculator:
+    """
+    Calculates movement duration for already-validated moves.
+    """
+
+    def calculate(
+        self,
+        piece: Piece,
+        source: Position,
+        target: Position,
+    ) -> int:
+        """
+        Returns movement duration in milliseconds.
+        """
+
+        if piece.type == PieceType.KNIGHT:
+            distance_in_cells = 1
+        else:
+            row_delta = abs(target.row - source.row)
+            column_delta = abs(target.column - source.column)
+
+            if source.row == target.row:
+                distance_in_cells = column_delta
+            elif source.column == target.column:
+                distance_in_cells = row_delta
+            else:
+                distance_in_cells = row_delta
+
+        return distance_in_cells * MILLISECONDS_PER_CELL
+
+======================================================================
+FILE: realtime/motion.py
+======================================================================
+"""
+Represents a single active piece movement.
+"""
+
+from math import ceil
+
+from model.piece import Piece
+from model.piece import PieceType
+from model.position import Position
+
+
+class Motion:
+    """
+    Represents a single active movement.
+    """
+
+    def __init__(
+        self,
+        piece: Piece,
+        source: Position,
+        target: Position,
+        duration: int,
+        start_time: int,
+        sequence: int,
+    ):
+        self._piece = piece
+        self._source = source
+        self._target = target
+        self._duration = duration
+        self._elapsed_time = 0
+        self._start_time = start_time
+        self._sequence = sequence
+        self._path = self._build_path(
+            piece_type=piece.type,
+            source=source,
+            target=target,
+        )
+        self._current_index = 0
+        self._is_stopped = False
+
+    @property
+    def piece(self) -> Piece:
+        return self._piece
+
+    @property
+    def source(self) -> Position:
+        return self._source
+
+    @property
+    def target(self) -> Position:
+        return self._target
+
+    @property
+    def duration(self) -> int:
+        return self._duration
+
+    @property
+    def elapsed_time(self) -> int:
+        return self._elapsed_time
+
+    @property
+    def start_time(self) -> int:
+        return self._start_time
+
+    @property
+    def sequence(self) -> int:
+        return self._sequence
+
+    @property
+    def current_position(self) -> Position:
+        return self._path[self._current_index]
+
+    @property
+    def next_position(self) -> Position | None:
+        if self._current_index >= self.step_count:
+            return None
+        return self._path[self._current_index + 1]
+
+    @property
+    def step_count(self) -> int:
+        return len(self._path) - 1
+
+    def advance_time(
+        self,
+        milliseconds: int,
+    ) -> None:
+        """
+        Advances the motion timer.
+        """
+
+        self._elapsed_time += milliseconds
+
+    def milliseconds_until_next_step(self) -> int | None:
+        """
+        Returns the remaining time until the next cell transition.
+        """
+
+        if not self.is_moving():
+            return None
+
+        next_index = self._current_index + 1
+        threshold = ceil((next_index * self._duration) / self.step_count)
+        return max(0, threshold - self._elapsed_time)
+
+    def is_ready_for_next_step(self) -> bool:
+        """
+        Returns whether the motion reached the next transition threshold.
+        """
+
+        remaining = self.milliseconds_until_next_step()
+        return remaining == 0
+
+    def step_forward(self) -> Position:
+        """
+        Advances one board cell in the planned path.
+        """
+
+        if self.next_position is None:
+            raise ValueError("Motion already reached destination.")
+
+        self._current_index += 1
+        return self.current_position
+
+    def stop(self) -> None:
+        """
+        Stops the motion at its current position.
+        """
+
+        self._is_stopped = True
+
+    def is_finished(self) -> bool:
+        """
+        Returns whether the motion has completed.
+        """
+
+        return self._is_stopped or self._current_index >= self.step_count
+
+    def is_moving(self) -> bool:
+        """
+        Returns whether the motion can still advance.
+        """
+
+        return not self._is_stopped and self._current_index < self.step_count
+
+    def _build_path(
+        self,
+        piece_type: PieceType,
+        source: Position,
+        target: Position,
+    ) -> list[Position]:
+        """
+        Builds the sequence of visited cells from source to target.
+        """
+
+        row_delta = target.row - source.row
+        column_delta = target.column - source.column
+
+        if piece_type == PieceType.KNIGHT:
+            return [source, target]
+
+        steps = max(abs(row_delta), abs(column_delta))
+
+        if steps == 0:
+            return [source]
+
+        row_step = row_delta // steps
+        column_step = column_delta // steps
+
+        path = [source]
+
+        for step_index in range(1, steps + 1):
+            path.append(
+                Position(
+                    row=source.row + (row_step * step_index),
+                    column=source.column + (column_step * step_index),
+                )
+            )
+
+        return path
+
+======================================================================
+FILE: realtime/motion_manager.py
+======================================================================
+"""
+Manages all active motions.
+"""
+
+from typing import List
+
+from model.piece import Piece
+from realtime.motion import Motion
+
+
+class MotionManager:
+    """
+    Stores and manages all active motions.
+    """
+
+    def __init__(self):
+        self._motions: List[Motion] = []
+
+    def add(
+        self,
+        motion: Motion,
+    ) -> None:
+        self._motions.append(motion)
+
+    def remove(
+        self,
+        motion: Motion,
+    ) -> None:
+        self._motions.remove(motion)
+
+    def get_all(self) -> List[Motion]:
+        return self._motions
+
+    def get_snapshot(self) -> tuple[Motion, ...]:
+        """Returns an immutable snapshot of active motions — safe for external use."""
+        return tuple(self._motions)
+
+    def is_piece_moving(
+        self,
+        piece: Piece,
+    ) -> bool:
+        return any(
+            motion.piece == piece
+            for motion in self._motions
+        )
+
+    def has_motions(self) -> bool:
+        return len(self._motions) > 0
+
+======================================================================
+FILE: realtime/motion_step_planner.py
+======================================================================
+"""
+Selects and orders motions that are ready to step.
+"""
+
+from realtime.motion import Motion
+
+
+class MotionStepPlanner:
+    """
+    Chooses which motions should resolve in the current tick.
+
+    Ordering rule:
+    older arrivals resolve first so later arrivals can override them.
+    """
+
+    def get_ready_motions(
+        self,
+        motions: list[Motion],
+    ) -> list[Motion]:
+        """
+        Returns motions that reached a cell boundary, sorted by arrival order.
+        """
+
+        ready_motions = [
+            motion
+            for motion in motions
+            if motion.is_ready_for_next_step()
+        ]
+
+        ready_motions.sort(
+            key=lambda motion: (
+                motion.start_time,
+                motion.sequence,
+            )
+        )
+
+        return ready_motions
+
+======================================================================
+FILE: realtime/motion_timeline.py
+======================================================================
+"""
+Provides simulation timeline utilities for active motions.
+"""
+
+from realtime.airborne_manager import AirborneManager
+from realtime.motion import Motion
+
+
+class MotionTimeline:
+    """
+    Owns simulation clock and event delta calculations.
+
+    This class is intentionally focused on time slicing only.
+    It does not resolve collisions or board state transitions.
+    """
+
+    def __init__(self):
+        self._clock_milliseconds = 0
+
+    @property
+    def current_time(self) -> int:
+        """
+        Returns current simulation time.
+        """
+
+        return self._clock_milliseconds
+
+    def next_event_delta(
+        self,
+        remaining_time: int,
+        motions: list[Motion],
+        airborne_manager: AirborneManager,
+    ) -> int:
+        """
+        Returns the time slice until the next meaningful event.
+        """
+
+        next_event_time = remaining_time
+
+        for motion in motions:
+            until_next_step = motion.milliseconds_until_next_step()
+            if until_next_step is None:
+                continue
+            next_event_time = min(next_event_time, until_next_step)
+
+        airborne_delta = airborne_manager.time_until_next_landing()
+        if airborne_delta is not None:
+            next_event_time = min(next_event_time, airborne_delta)
+
+        # Keep the loop progressing even if callers pass odd values.
+        return max(0, next_event_time)
+
+    def advance(
+        self,
+        motions: list[Motion],
+        airborne_manager: AirborneManager,
+        milliseconds: int,
+    ) -> None:
+        """
+        Applies a time slice to motions, airborne timers, and clock.
+        """
+
+        for motion in motions:
+            motion.advance_time(milliseconds)
+
+        airborne_manager.advance_time(milliseconds)
+        self._clock_milliseconds += milliseconds
+
+======================================================================
+FILE: realtime/piece_lifecycle_service.py
+======================================================================
+"""
+Manages piece lifecycle transitions in real-time simulation.
+"""
+
+from model.board import Board
+from model.piece import Piece, PieceColor, PieceState, PieceType
+from model.position import Position
+from realtime.airborne_manager import AirborneManager
+from realtime.motion_manager import MotionManager
+
+
+class PieceLifecycleService:
+    """
+    Central place for capture, promotion, and resolution flags.
+
+    The service keeps rule outcomes consistent regardless of who triggers them.
+    """
+
+    def __init__(
+        self,
+        board: Board,
+        motion_manager: MotionManager,
+        airborne_manager: AirborneManager,
+    ):
+        self._board = board
+        self._motion_manager = motion_manager
+        self._airborne_manager = airborne_manager
+        self._last_captured_piece: Piece | None = None
+        self._captured_king_in_last_resolution = False
+
+    @property
+    def last_captured_piece(self) -> Piece | None:
+        return self._last_captured_piece
+
+    def reset_resolution_flags(self) -> None:
+        """
+        Clears one-tick capture metadata before advancing simulation.
+        """
+
+        self._last_captured_piece = None
+        self._captured_king_in_last_resolution = False
+
+    def consume_captured_king_flag(self) -> bool:
+        """
+        Returns and clears king-capture flag.
+        """
+
+        captured_king = self._captured_king_in_last_resolution
+        self._captured_king_in_last_resolution = False
+        return captured_king
+
+    def capture_piece(
+        self,
+        piece: Piece,
+        position: Position,
+    ) -> None:
+        """
+        Marks piece as captured and removes it from active systems.
+        """
+
+        self._last_captured_piece = piece
+        piece.state = PieceState.CAPTURED
+        self._airborne_manager.remove_piece(piece)
+
+        if piece.type == PieceType.KING:
+            self._captured_king_in_last_resolution = True
+
+        for motion in list(self._motion_manager.get_all()):
+            if motion.piece == piece:
+                motion.stop()
+                self._motion_manager.remove(motion)
+                break
+
+        piece_on_board = self._board.get_piece(position)
+        if piece_on_board == piece:
+            self._board.set_piece(position, self._board.EMPTY_CELL)
+
+    def finalize_finished_motion_piece(
+        self,
+        piece: Piece,
+    ) -> None:
+        """
+        Applies end-of-motion state transitions for the moving piece.
+        """
+
+        piece.state = PieceState.IDLE
+        self._handle_promotion(piece)
+
+    def _handle_promotion(
+        self,
+        piece: Piece,
+    ) -> None:
+        """
+        Promotes pawn that reached last rank.
+        """
+
+        if piece.type != PieceType.PAWN:
+            return
+
+        if (
+            piece.color == PieceColor.WHITE
+            and piece.position.row == 0
+        ):
+            piece.type = PieceType.QUEEN
+            return
+
+        if (
+            piece.color == PieceColor.BLACK
+            and piece.position.row == self._board.height - 1
+        ):
+            piece.type = PieceType.QUEEN
+
+======================================================================
+FILE: realtime/real_time_arbiter.py
+======================================================================
+"""
+Manages piece movement over time.
+"""
+
+from config.constants import JUMP_DURATION_MILLISECONDS
+from model.board import Board
+from model.piece import Piece, PieceState
+from model.position import Position
+from realtime.airborne_manager import AirborneManager
+from realtime.collision_resolver import CollisionResolver
+from realtime.motion import Motion
+from realtime.motion_manager import MotionManager
+from realtime.motion_step_planner import MotionStepPlanner
+from realtime.motion_timeline import MotionTimeline
+from realtime.piece_lifecycle_service import PieceLifecycleService
+
+
+class RealTimeArbiter:
+    """
+    Manages real-time piece movement.
+    """
+
+    def __init__(
+        self,
+        board: Board,
+    ):
+        self._board = board
+        self._motion_manager = MotionManager()
+        self._airborne_manager = AirborneManager(
+            jump_duration_milliseconds=JUMP_DURATION_MILLISECONDS,
+        )
+        self._timeline = MotionTimeline()
+        self._planner = MotionStepPlanner()
+        self._lifecycle = PieceLifecycleService(
+            board=self._board,
+            motion_manager=self._motion_manager,
+            airborne_manager=self._airborne_manager,
+        )
+        self._collision_resolver = CollisionResolver(
+            board=self._board,
+            lifecycle=self._lifecycle,
+        )
+        self._motion_sequence = 0
+
+    def has_active_motion(self) -> bool:
+        """
+        Returns whether a motion is currently active.
+        """
+
+        return self._motion_manager.has_motions()
+
+    def get_active_motions(self) -> tuple:
+        """
+        Returns an immutable snapshot of all active motions.
+        Safe for external callers — does not expose internal structure.
+        """
+        return self._motion_manager.get_snapshot()
+
+    @property
+    def last_captured_piece(self) -> Piece | None:
+        """
+        Returns the last captured piece, if any.
+        """
+
+        return self._lifecycle.last_captured_piece
+
+    def consume_captured_king_flag(self) -> bool:
+        """
+        Returns whether a king was captured in the last resolution,
+        then resets the flag.
+        """
+
+        return self._lifecycle.consume_captured_king_flag()
+
+    def start_motion(
+        self,
+        piece: Piece,
+        source: Position,
+        target: Position,
+        duration: int,
+    ) -> None:
+        """
+        Starts a new motion.
+        """
+
+        motion = Motion(
+            piece=piece,
+            source=source,
+            target=target,
+            duration=duration,
+            start_time=self._timeline.current_time,
+            sequence=self._motion_sequence,
+        )
+        self._motion_sequence += 1
+        piece.state = PieceState.MOVING
+        self._motion_manager.add(motion)
+
+    def advance_time(
+        self,
+        milliseconds: int,
+    ) -> None:
+        """
+        Advances the active motion.
+        """
+
+        if (
+            not self._motion_manager.has_motions()
+            and not self._airborne_manager.has_airborne_pieces()
+        ):
+            return
+
+        self._lifecycle.reset_resolution_flags()
+
+        remaining_time = milliseconds
+
+        while remaining_time > 0:
+            next_event_time = self._timeline.next_event_delta(
+                remaining_time=remaining_time,
+                motions=self._motion_manager.get_all(),
+                airborne_manager=self._airborne_manager,
+            )
+
+            self._timeline.advance(
+                motions=self._motion_manager.get_all(),
+                airborne_manager=self._airborne_manager,
+                milliseconds=next_event_time,
+            )
+            remaining_time -= next_event_time
+
+            self._resolve_ready_steps()
+
+            self._airborne_manager.land_finished_pieces()
+            self._cleanup_finished_motions()
+
+    def _resolve_ready_steps(self) -> None:
+        """
+        Resolves all motions that reached a cell boundary at the current time.
+        """
+
+        ready_motions = self._planner.get_ready_motions(
+            self._motion_manager.get_all(),
+        )
+
+        for motion in ready_motions:
+            if motion not in self._motion_manager.get_all():
+                continue
+
+            if not motion.is_ready_for_next_step():
+                continue
+
+            self._collision_resolver.resolve_step(motion)
+
+    def _cleanup_finished_motions(self) -> None:
+        """
+        Removes motions that can no longer advance.
+        """
+
+        for motion in list(self._motion_manager.get_all()):
+            if motion.is_finished():
+                self._motion_manager.remove(motion)
+
+    def jump(
+        self,
+        piece: Piece,
+    ) -> None:
+        """
+        Marks a piece as airborne.
+        """
+
+        self._airborne_manager.jump(piece)
+
+    def has_active_motions(self) -> bool:
+        """Returns whether any motions are currently active."""
+        return self._motion_manager.has_motions()
+
+======================================================================
+FILE: rules/bishop_rule.py
+======================================================================
+﻿"""
+Movement rule for the bishop.
+"""
+
+from model.board import Board
+from model.piece import Piece
+from model.position import Position
+
+from rules.movement_rule import MovementRule
+from rules.movement_utils import (
+    DIAGONAL_DIRECTIONS,
+    collect_moves_in_direction,
+)
+
+
+class BishopRule(MovementRule):
+    """
+    Calculates all legal bishop moves.
+    """
+
+    def get_legal_moves(
+        self,
+        piece: Piece,
+        board: Board,
+    ) -> set[Position]:
+
+        legal_moves = set()
+
+        for row_step, column_step in DIAGONAL_DIRECTIONS:
+
+            legal_moves.update(
+                collect_moves_in_direction(
+                    board=board,
+                    piece=piece,
+                    row_step=row_step,
+                    column_step=column_step,
+                )
+            )
+
+        return legal_moves
+
+======================================================================
+FILE: rules/king_rule.py
+======================================================================
+﻿"""
+Movement rule for the king.
+"""
+
+from model.board import Board
+from model.piece import Piece
+from model.position import Position
+
+from rules.movement_rule import MovementRule
+from rules.movement_utils import (
+    DIAGONAL_DIRECTIONS,
+    ORTHOGONAL_DIRECTIONS,
+    is_empty_square,
+    is_enemy_piece,
+)
+
+
+class KingRule(MovementRule):
+    """
+    Calculates all legal king moves.
+    """
+
+    def get_legal_moves(
+        self,
+        piece: Piece,
+        board: Board,
+    ) -> set[Position]:
+
+        legal_moves = set()
+
+        for row_offset, column_offset in (
+            ORTHOGONAL_DIRECTIONS + DIAGONAL_DIRECTIONS
+        ):
+
+            position = piece.position.offset(
+                row_offset,
+                column_offset,
+            )
+
+            if not board.is_inside(position):
+                continue
+
+            target = board.get_piece(position)
+
+            if (
+                is_empty_square(target)
+                or is_enemy_piece(piece, target)
+            ):
+                legal_moves.add(position)
+
+        return legal_moves
+
+======================================================================
+FILE: rules/knight_rule.py
+======================================================================
+﻿"""
+Movement rule for the knight.
+"""
+
+from model.board import Board
+from model.piece import Piece
+from model.position import Position
+
+from rules.movement_rule import MovementRule
+from rules.movement_utils import (
+    is_empty_square,
+    is_enemy_piece,
+)
+
+
+KNIGHT_OFFSETS = (
+    (-2, -1),
+    (-2, 1),
+    (-1, -2),
+    (-1, 2),
+    (1, -2),
+    (1, 2),
+    (2, -1),
+    (2, 1),
+)
+
+
+class KnightRule(MovementRule):
+    """
+    Calculates all legal knight moves.
+    """
+
+    def get_legal_moves(
+        self,
+        piece: Piece,
+        board: Board,
+    ) -> set[Position]:
+
+        legal_moves = set()
+
+        for row_offset, column_offset in KNIGHT_OFFSETS:
+
+            position = piece.position.offset(
+                row_offset,
+                column_offset,
+            )
+
+            if not board.is_inside(position):
+                continue
+
+            target = board.get_piece(position)
+
+            if (
+                is_empty_square(target)
+                or is_enemy_piece(piece, target)
+            ):
+                legal_moves.add(position)
+
+        return legal_moves
+
+======================================================================
+FILE: rules/move_reason.py
+======================================================================
+﻿"""
+Possible results returned by RuleEngine.
+"""
+
+from enum import Enum
+
+
+class MoveReason(Enum):
+    """
+    Machine-readable move validation results.
+    """
+
+    OK = "ok"
+
+    OUTSIDE_BOARD = "outside_board"
+
+    EMPTY_SOURCE = "empty_source"
+
+    FRIENDLY_DESTINATION = "friendly_destination"
+
+    ILLEGAL_PIECE_MOVE = "illegal_piece_move"
+
+======================================================================
+FILE: rules/move_validation.py
+======================================================================
+﻿"""
+Represents the result of move validation.
+"""
+
+from dataclasses import dataclass
+
+from rules.move_reason import MoveReason
+
+
+@dataclass(frozen=True)
+class MoveValidation:
+    """
+    Represents the result of validating a move.
+    """
+
+    is_valid: bool
+    reason: MoveReason
+
+======================================================================
+FILE: rules/movement_rule.py
+======================================================================
+﻿"""
+Defines the interface for all chess movement rules.
+"""
+
+from abc import ABC, abstractmethod
+
+from model.board import Board
+from model.piece import Piece
+from model.position import Position
+
+
+class MovementRule(ABC):
+    """
+    Base interface for all piece movement rules.
+    """
+
+    @abstractmethod
+    def get_legal_moves(
+        self,
+        piece: Piece,
+        board: Board,
+    ) -> set[Position]:
+        pass
+
+======================================================================
+FILE: rules/pawn_rule.py
+======================================================================
+﻿"""
+Movement rule for the pawn.
+"""
+
+from model.board import Board
+from model.piece import Piece, PieceColor
+from model.position import Position
+
+from rules.movement_rule import MovementRule
+from rules.movement_utils import (
+    is_empty_square,
+    is_enemy_piece,
+)
+
+
+class PawnRule(MovementRule):
+    """
+    Calculates every legal move for a pawn.
+    """
+
+    SINGLE_STEP = 1
+    DOUBLE_STEP = 2
+
+    WHITE_DIRECTION = -1
+    BLACK_DIRECTION = 1
+
+    def get_legal_moves(
+        self,
+        piece: Piece,
+        board: Board,
+    ) -> set[Position]:
+        """
+        Returns every legal destination for the pawn.
+        """
+
+        legal_moves = set()
+
+        direction = self._move_direction(piece)
+        start_row = self._starting_row(piece, board)
+
+        self._add_forward_move(
+            board,
+            piece,
+            direction,
+            legal_moves,
+        )
+
+        self._add_double_move(
+            board,
+            piece,
+            direction,
+            start_row,
+            legal_moves,
+        )
+
+        self._add_diagonal_captures(
+            board,
+            piece,
+            direction,
+            legal_moves,
+        )
+
+        return legal_moves
+
+    def _move_direction(
+        self,
+        piece: Piece,
+    ) -> int:
+        """
+        Returns the pawn movement direction.
+        """
+
+        if piece.color == PieceColor.WHITE:
+            return self.WHITE_DIRECTION
+
+        return self.BLACK_DIRECTION
+
+    def _starting_row(
+        self,
+        piece: Piece,
+        board: Board,
+    ) -> int:
+        """
+        Returns the pawn starting row.
+        """
+
+        if piece.color == PieceColor.WHITE:
+            return board.height - 2
+
+        return 1
+
+    def _add_forward_move(
+        self,
+        board: Board,
+        piece: Piece,
+        direction: int,
+        legal_moves: set[Position],
+    ):
+        """
+        Adds the single forward move if legal.
+        """
+
+        position = piece.position.offset(direction, 0)
+
+        if not board.is_inside(position):
+            return
+
+        if is_empty_square(board.get_piece(position)):
+            legal_moves.add(position)
+
+    def _add_double_move(
+        self,
+        board: Board,
+        piece: Piece,
+        direction: int,
+        start_row: int,
+        legal_moves: set[Position],
+    ):
+        """
+        Adds the double forward move if legal.
+        """
+
+        if piece.position.row != start_row:
+            return
+
+        middle = piece.position.offset(direction, 0)
+        target = piece.position.offset(
+            direction * self.DOUBLE_STEP,
+            0,
+        )
+
+        if not board.is_inside(target):
+            return
+
+        if (
+            is_empty_square(board.get_piece(middle))
+            and
+            is_empty_square(board.get_piece(target))
+        ):
+            legal_moves.add(target)
+
+    def _add_diagonal_captures(
+        self,
+        board: Board,
+        piece: Piece,
+        direction: int,
+        legal_moves: set[Position],
+    ):
+        """
+        Adds every legal diagonal capture.
+        """
+
+        for column_offset in (-1, 1):
+
+            position = piece.position.offset(
+                direction,
+                column_offset,
+            )
+
+            if not board.is_inside(position):
+                continue
+
+            target_piece = board.get_piece(position)
+
+            if is_enemy_piece(piece, target_piece):
+                legal_moves.add(position)
+
+======================================================================
+FILE: rules/queen_rule.py
+======================================================================
+﻿"""
+Movement rule for the queen.
+"""
+
+from model.board import Board
+from model.piece import Piece
+from model.position import Position
+
+from rules.movement_rule import MovementRule
+from rules.movement_utils import (
+    ORTHOGONAL_DIRECTIONS,
+    DIAGONAL_DIRECTIONS,
+    collect_moves_in_direction,
+)
+
+
+class QueenRule(MovementRule):
+    """
+    Calculates all legal queen moves.
+    """
+
+    def get_legal_moves(
+        self,
+        piece: Piece,
+        board: Board,
+    ) -> set[Position]:
+
+        legal_moves = set()
+
+        for row_step, column_step in (
+            ORTHOGONAL_DIRECTIONS + DIAGONAL_DIRECTIONS
+        ):
+
+            legal_moves.update(
+                collect_moves_in_direction(
+                    board=board,
+                    piece=piece,
+                    row_step=row_step,
+                    column_step=column_step,
+                )
+            )
+
+        return legal_moves
+
+======================================================================
+FILE: rules/rook_rule.py
+======================================================================
+﻿"""
+Movement rule for the rook.
+"""
+
+from model.board import Board
+from model.piece import Piece
+from model.position import Position
+
+from rules.movement_rule import MovementRule
+from rules.movement_utils import (
+    ORTHOGONAL_DIRECTIONS,
+    collect_moves_in_direction,
+)
+
+
+class RookRule(MovementRule):
+    """
+    Calculates all legal rook moves.
+    """
+
+    def get_legal_moves(
+        self,
+        piece: Piece,
+        board: Board,
+    ) -> set[Position]:
+
+        legal_moves = set()
+
+        for row_step, column_step in ORTHOGONAL_DIRECTIONS:
+
+            legal_moves.update(
+                collect_moves_in_direction(
+                    board=board,
+                    piece=piece,
+                    row_step=row_step,
+                    column_step=column_step,
+                )
+            )
+
+        return legal_moves
+
+======================================================================
+FILE: rules/rule_engine.py
+======================================================================
+"""
+Validates chess move requests.
+
+Responsibilities:
+    - Perform general move validations.
+    - Select the appropriate movement rule for each piece.
+    - Delegate piece-specific validation to the matching rule.
+    - Return the validation result.
+
+This class coordinates move validation but does not implement
+the movement logic of individual chess pieces.
+"""
+
+from model.board import Board
+from model.position import Position
+from model.piece import Piece, PieceType
+
+from rules.move_reason import MoveReason
+from rules.move_validation import MoveValidation
+from rules.movement_rule import MovementRule
+
+from rules.rook_rule import RookRule
+from rules.bishop_rule import BishopRule
+from rules.queen_rule import QueenRule
+from rules.knight_rule import KnightRule
+from rules.king_rule import KingRule
+from rules.pawn_rule import PawnRule
+
+
+class RuleEngine:
+    """
+    Validates moves using the appropriate movement rule.
+    """
+
+    _RULES = {
+        PieceType.ROOK: RookRule(),
+        PieceType.BISHOP: BishopRule(),
+        PieceType.QUEEN: QueenRule(),
+        PieceType.KNIGHT: KnightRule(),
+        PieceType.KING: KingRule(),
+        PieceType.PAWN: PawnRule(),
+    }
+
+    def validate_move(
+        self,
+        board: Board,
+        source: Position,
+        target: Position,
+    ) -> MoveValidation:
+        """
+        Returns whether a move is legal.
+        """
+
+        validation = self._validate_basic_rules(
+            board,
+            source,
+            target,
+        )
+
+        if validation is not None:
+            return validation
+
+        piece = board.get_piece(source)
+
+        legal_moves = self.get_legal_moves(
+            board,
+            piece,
+        )
+
+        if target in legal_moves:
+            return MoveValidation(
+                is_valid=True,
+                reason=MoveReason.OK,
+            )
+
+        return MoveValidation(
+            is_valid=False,
+            reason=MoveReason.ILLEGAL_PIECE_MOVE,
+        )
+
+    def get_legal_moves(
+        self,
+        board: Board,
+        piece: Piece,
+    ) -> set[Position]:
+        """
+        Returns every legal destination for the given piece.
+        """
+
+        rule = self._get_rule(piece.type)
+
+        return rule.get_legal_moves(
+            piece,
+            board,
+        )
+
+    def _get_rule(
+        self,
+        piece_type: PieceType,
+    ) -> MovementRule:
+        """
+        Returns the movement rule matching the given piece type.
+        """
+
+        return self._RULES[piece_type]
+
+    def _validate_basic_rules(
+        self,
+        board: Board,
+        source: Position,
+        target: Position,
+    ) -> MoveValidation | None:
+        """
+        Performs validations that are independent of piece movement.
+        """
+
+        if not board.is_inside(source):
+            return MoveValidation(
+                is_valid=False,
+                reason=MoveReason.OUTSIDE_BOARD,
+            )
+
+        if not board.is_inside(target):
+            return MoveValidation(
+                is_valid=False,
+                reason=MoveReason.OUTSIDE_BOARD,
+            )
+
+        piece = board.get_piece(source)
+
+        if piece is None or piece == board.EMPTY_CELL:
+            return MoveValidation(
+                is_valid=False,
+                reason=MoveReason.EMPTY_SOURCE,
+            )
+
+        target_piece = board.get_piece(target)
+
+        if (
+            target_piece is not None
+            and target_piece != board.EMPTY_CELL
+            and target_piece.color == piece.color
+        ):
+            return MoveValidation(
+                is_valid=False,
+                reason=MoveReason.FRIENDLY_DESTINATION,
+            )
+
+        return None
+
+======================================================================
+FILE: runner/script_runner.py
+======================================================================
+"""
+Executes textual test commands.
+
+Responsibilities:
+    - Iterate over the input command list.
+    - Parse each textual command.
+    - Dispatch every command to the appropriate system component.
+    - Delegate user actions to the Controller.
+    - Delegate game-time operations to the GameEngine.
+    - Print the board using the TextBoardFormatter.
+
+This class does not implement game logic.
+It only translates textual commands into method calls.
+"""
+
+from board_io.text_board_formatter import TextBoardFormatter
+from config.constants import (
+    COMMAND_CLICK,
+    COMMAND_JUMP,
+    COMMAND_PRINT_BOARD,
+    COMMAND_WAIT,
+)
+from controller.controller import Controller
+from errors.user_input_errors import EmptyCommandError, UnknownCommandError
+from game.game_engine import GameEngine
+
+
+class ScriptRunner:
+    """
+    Executes test commands.
+    """
+
+    def __init__(
+        self,
+        controller: Controller,
+        game_engine: GameEngine,
+    ):
+        self._controller = controller
+        self._game_engine = game_engine
+
+    def run(
+        self,
+        commands: list[str],
+    ) -> None:
+        """
+        Executes all commands.
+        """
+
+        for command in commands:
+
+            command = command.strip()
+
+            if not command:
+                raise EmptyCommandError()
+
+            if command.startswith(COMMAND_CLICK):
+                self._handle_click(command)
+
+            elif command.startswith(COMMAND_JUMP):
+                self._handle_jump(command)
+
+            elif command.startswith(COMMAND_WAIT):
+                self._handle_wait(command)
+
+            elif command == COMMAND_PRINT_BOARD:
+                self._handle_print_board()
+                
+            else:
+                raise UnknownCommandError()
+
+    def _handle_click(
+        self,
+        command: str,
+    ) -> None:
+        """
+        Executes a click command.
+        """
+
+        _, x, y = command.split()
+
+        self._controller.handle_click(
+            int(x),
+            int(y),
+        )
+
+    def _handle_jump(
+        self,
+        command: str,
+    ) -> None:
+        """
+        Executes a jump command.
+        """
+
+        _, x, y = command.split()
+
+        self._controller.jump(
+            int(x),
+            int(y),
+        )
+
+    def _handle_wait(
+        self,
+        command: str,
+    ) -> None:
+        """
+        Executes a wait command.
+        """
+
+        _, milliseconds = command.split()
+
+        self._game_engine.wait(
+            int(milliseconds),
+        )
+
+    def _handle_print_board(self) -> None:
+        """
+        Prints the current board.
+        """
+
+        print(
+            TextBoardFormatter.format(
+                self._game_engine.get_board()
+            )
+        )
+
+======================================================================
+FILE: tools/class_code_exporter.py
+======================================================================
+"""Create a single text file containing the project's implementation classes."""
+
+from __future__ import annotations
+
+import os
+import re
+from pathlib import Path
+
+
+class ClassCodeExporter:
+    """Exports every non-test Python module that declares a class."""
+
+    _EXCLUDED_DIRECTORIES = {
+        ".git",
+        ".pytest_cache",
+        ".venv",
+        "__pycache__",
+        "tests",
+        "texttests",
+    }
+    _CLASS_DECLARATION = re.compile(r"^\s*class\s+", re.MULTILINE)
+
+    def __init__(self, project_root: Path, output_name: str = "all_classes_code.txt") -> None:
+        self._project_root = project_root
+        self._output_path = project_root / output_name
+
+    def update(self) -> bool:
+        """Write the export only when its content changed.
+
+        Returns ``True`` when the text file was updated.
+        """
+        content = self._build_content()
+        if self._output_path.exists() and self._output_path.read_text(encoding="utf-8") == content:
+            return False
+
+        self._output_path.write_text(content, encoding="utf-8")
+        return True
+
+    def _build_content(self) -> str:
+        parts = [
+            "PROJECT CLASSES - FULL SOURCE CODE",
+            "=" * 70,
+            "Test files and helper files are excluded.",
+        ]
+
+        for source_file in self._class_files():
+            relative_path = source_file.relative_to(self._project_root).as_posix()
+            parts.extend(
+                [
+                    "",
+                    "=" * 70,
+                    f"FILE: {relative_path}",
+                    "=" * 70,
+                    source_file.read_text(encoding="utf-8").rstrip(),
+                ]
+            )
+
+        return "\n".join(parts) + "\n"
+
+    def _class_files(self) -> list[Path]:
+        files: list[Path] = []
+        for directory, subdirectories, filenames in os.walk(self._project_root):
+            subdirectories[:] = [
+                name for name in subdirectories if name not in self._EXCLUDED_DIRECTORIES
+            ]
+            for filename in filenames:
+                source_file = Path(directory) / filename
+                if self._is_class_file(source_file):
+                    files.append(source_file)
+
+        return sorted(files, key=lambda path: path.as_posix().lower())
+
+    def _is_class_file(self, source_file: Path) -> bool:
+        if source_file.suffix != ".py" or source_file.name == "_verify5.py":
+            return False
+        return bool(self._CLASS_DECLARATION.search(source_file.read_text(encoding="utf-8")))
+
+
+if __name__ == "__main__":
+    root = Path(__file__).resolve().parents[1]
+    changed = ClassCodeExporter(root).update()
+    print("Updated all_classes_code.txt" if changed else "all_classes_code.txt is already up to date")
+
+======================================================================
+FILE: view/ui/animation/animation_repository.py
+======================================================================
+from view.ui.animation.animation_state import AnimationState
+from view.ui.animation.sprite_animation import SpriteAnimation
+from view.ui.animation.sprite_loader import SpriteLoader
+
+
+class AnimationRepository:
+    """
+    Stores loaded animations in memory.
+
+    Each animation is loaded only once.
+    """
+
+    def __init__(self):
+
+        self._loader = SpriteLoader()
+
+        self._animations: dict[
+            tuple[str, AnimationState, tuple[int, int]],
+            SpriteAnimation
+        ] = {}
+
+    def get(
+            self,
+            piece_code: str,
+            state: AnimationState,
+            size: tuple[int, int]
+    ) -> SpriteAnimation:
+        """
+        Returns the requested animation.
+
+        If the animation was not loaded before,
+        it is loaded from disk and stored in memory.
+        """
+
+        key = (
+            piece_code,
+            state,
+            size
+        )
+
+        if key not in self._animations:
+
+            self._animations[key] = self._loader.load(
+                piece_code=piece_code,
+                state=state,
+                size=size
+            )
+
+        return self._animations[key]
+
+    def clear(self) -> None:
+        """
+        Removes all cached animations.
+        """
+
+        self._animations.clear()
+
+======================================================================
+FILE: view/ui/animation/animation_state.py
+======================================================================
+from enum import Enum
+
+
+class AnimationState(Enum):
+    IDLE = "idle"
+    MOVE = "move"
+    JUMP = "jump"
+    SHORT_REST = "short_rest"
+    LONG_REST = "long_rest"
+    DEAD = "dead"
+
+======================================================================
+FILE: view/ui/animation/animation_state_resolver.py
+======================================================================
+"""
+animation_state_resolver.py
+
+Converts piece states to animation states.
+
+Responsibilities:
+    - Resolve the correct animation state.
+"""
+
+from model.piece import PieceState
+from view.ui.animation.animation_state import AnimationState
+
+
+class AnimationStateResolver:
+
+    @staticmethod
+    def resolve(state: PieceState) -> AnimationState:
+
+        mapping = {
+            PieceState.IDLE: AnimationState.IDLE,
+            PieceState.MOVING: AnimationState.MOVE,
+            PieceState.AIRBORNE: AnimationState.JUMP,
+            PieceState.CAPTURED: AnimationState.DEAD,
+        }
+
+        return mapping[state]
+
+======================================================================
+FILE: view/ui/animation/piece_animation_controller.py
+======================================================================
+"""
+piece_animation_controller.py
+
+Manages the per-piece animation state, frame index, and timing.
+
+Responsibilities:
+    - Track which AnimationState each piece is currently displaying.
+    - Detect when a piece's PieceState changes and reset the frame timer.
+    - Compute the correct frame index based on elapsed time and animation fps.
+    - Provide the current frame index for any piece.
+
+This class does NOT load images, draw to the canvas, or know about pixels.
+"""
+
+import time
+
+from model.piece import Piece, PieceState
+from view.ui.animation.animation_state import AnimationState
+from view.ui.animation.animation_state_resolver import AnimationStateResolver
+from view.ui.animation.sprite_animation import SpriteAnimation
+
+
+class PieceAnimationController:
+    """
+    Tracks animation state and frame timing for every chess piece.
+
+    Each piece is identified by its unique id.
+    When a piece transitions to a new PieceState, the animation resets
+    to frame 0 so the new animation always starts from the beginning.
+    """
+
+    def __init__(self) -> None:
+        # Maps piece_id → last known AnimationState
+        self._current_anim_state: dict[int, AnimationState] = {}
+        # Maps piece_id → wall-clock time when the current animation started
+        self._anim_start_time: dict[int, float] = {}
+
+    def get_frame_index(
+        self,
+        piece: Piece,
+        animation: SpriteAnimation,
+    ) -> int:
+        """
+        Returns the current frame index for the given piece and animation.
+
+        If the piece's PieceState has changed since the last call, the
+        animation timer resets to 0 so the new animation starts cleanly.
+
+        Parameters
+        ----------
+        piece : Piece
+            The piece being rendered.
+        animation : SpriteAnimation
+            The animation that is about to be drawn (already resolved to
+            the correct state by the caller).
+
+        Returns
+        -------
+        int
+            Index into animation.frames for the current frame.
+        """
+        resolved_state = AnimationStateResolver.resolve(piece.state)
+        now = time.perf_counter()
+
+        # Reset timer whenever the animation state changes.
+        previous_state = self._current_anim_state.get(piece.id)
+        if previous_state != resolved_state:
+            self._current_anim_state[piece.id] = resolved_state
+            self._anim_start_time[piece.id] = now
+
+        elapsed = now - self._anim_start_time.get(piece.id, now)
+        frame_count = len(animation.frames)
+        fps = animation.fps if animation.fps > 0 else 8
+
+        if animation.loop:
+            return int(elapsed * fps) % frame_count
+        else:
+            # Non-looping animation clamps at the last frame.
+            return min(int(elapsed * fps), frame_count - 1)
+
+    def reset(self, piece: Piece) -> None:
+        """Clears all animation tracking for a piece (e.g. on capture)."""
+        self._current_anim_state.pop(piece.id, None)
+        self._anim_start_time.pop(piece.id, None)
+
+    def clear(self) -> None:
+        """Removes all tracked animation states."""
+        self._current_anim_state.clear()
+        self._anim_start_time.clear()
+
+======================================================================
+FILE: view/ui/animation/piece_code_resolver.py
+======================================================================
+from model.piece import Piece, PieceColor, PieceType
+
+
+class PieceCodeResolver:
+    """
+    Converts a logical chess piece into the corresponding
+    asset folder name.
+
+    Examples:
+        White King   -> KW
+        Black Pawn   -> PB
+        White Knight -> NW
+    """
+
+    @staticmethod
+    def resolve(piece: Piece) -> str:
+        """
+        Returns the asset folder code of the given piece.
+        """
+
+        piece_codes = {
+            (PieceType.KING, PieceColor.WHITE): "KW",
+            (PieceType.QUEEN, PieceColor.WHITE): "QW",
+            (PieceType.ROOK, PieceColor.WHITE): "RW",
+            (PieceType.BISHOP, PieceColor.WHITE): "BW",
+            (PieceType.KNIGHT, PieceColor.WHITE): "NW",
+            (PieceType.PAWN, PieceColor.WHITE): "PW",
+
+            (PieceType.KING, PieceColor.BLACK): "KB",
+            (PieceType.QUEEN, PieceColor.BLACK): "QB",
+            (PieceType.ROOK, PieceColor.BLACK): "RB",
+            (PieceType.BISHOP, PieceColor.BLACK): "BB",
+            (PieceType.KNIGHT, PieceColor.BLACK): "NB",
+            (PieceType.PAWN, PieceColor.BLACK): "PB",
+        }
+
+        return piece_codes[(piece.type, piece.color)]
+
+======================================================================
+FILE: view/ui/animation/sprite_animation.py
+======================================================================
+from dataclasses import dataclass
+
+from view.ui.graphics.img import Img
+
+
+@dataclass
+class SpriteAnimation:
+    """
+    Represents a single animation of a game piece.
+
+    Example:
+        idle
+        move
+        jump
+    """
+
+    name: str
+
+    frames: list[Img]
+
+    fps: int
+
+    loop: bool
+
+    next_state: str | None
+
+    speed: float
+
+======================================================================
+FILE: view/ui/animation/sprite_loader.py
+======================================================================
+import json
+from pathlib import Path
+
+from view.ui.animation.animation_state import AnimationState
+from view.ui.animation.sprite_animation import SpriteAnimation
+from view.ui.graphics.img import Img
+from view.ui.constants.ui_paths import CURRENT_PIECES_PATH
+
+
+class SpriteLoader:
+    """
+    sprite_loader.py
+
+    Loads sprite animations from the assets folder.
+
+    Responsibilities:
+        - Load animation files.
+        - Create SpriteAnimation objects.
+    """
+
+    def load(
+        self,
+        piece_code: str,
+        state: AnimationState,
+        size: tuple[int, int]
+    ) -> SpriteAnimation:
+
+        animation_folder = (
+            CURRENT_PIECES_PATH /
+            piece_code /
+            "states" /
+            state.value
+        )
+
+        config_path = animation_folder / "config.json"
+
+        sprites_folder = animation_folder / "sprites"
+
+        with open(config_path, encoding="utf-8") as file:
+            config = json.load(file)
+
+        frames = []
+
+        image_files = sorted(
+            sprites_folder.glob("*.png"),
+            key=lambda path: int(path.stem)
+        )
+
+        for image_path in image_files:
+
+            frame = Img().read(
+                image_path,
+                size=size,
+                keep_aspect=True
+            )
+
+            frames.append(frame)
+
+        return SpriteAnimation(
+            name=state.value,
+            frames=frames,
+            fps=config["graphics"]["frames_per_sec"],
+            loop=config["graphics"]["is_loop"],
+            next_state=config["physics"]["next_state_when_finished"],
+            speed=config["physics"]["speed_m_per_sec"]
+        )
+
+======================================================================
+FILE: view/ui/constants/image_keys.py
+======================================================================
+class ImageKeys:
+    """
+    Contains the keys used by ImageManager.
+    """
+
+    # Backgrounds
+    BACKGROUND = "background"
+
+    # Board
+    BOARD = "board"
+
+#בעתיד יהיו כאן כפתורים ואיקונים נוספים עבור המשחק
+
+======================================================================
+FILE: view/ui/graphics/image_manager.py
+======================================================================
+from pathlib import Path
+
+from view.ui.graphics.img import Img
+
+
+class ImageManager:
+    """
+    image_manager.py
+
+    Provides centralized management for UI images.
+
+    Responsibilities:
+        - Load images.
+        - Cache images.
+        - Provide images.
+    mage is loaded only once and then reused.
+        """
+
+    def __init__(self):
+        self._images: dict[str, Img] = {}
+
+    def load(
+        self,
+        key: str,
+        path: str | Path,
+        size: tuple[int, int] | None = None,
+        keep_aspect: bool = False,
+    ) -> None:
+     
+
+        if not key:
+            raise ValueError("Image key cannot be empty.")
+
+        if key in self._images:
+            raise ValueError(
+                f"Image '{key}' is already loaded."
+            )
+
+        path = Path(path)
+
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Image file was not found: {path}"
+            )
+
+        self._images[key] = Img().read(
+            path,
+            size=size,
+            keep_aspect=keep_aspect
+        )
+
+    def get(
+        self,
+        key: str
+    ) -> Img:
+      
+
+        if key not in self._images:
+            raise KeyError(
+                f"Image '{key}' was not loaded."
+            )
+
+        return self._images[key]
+
+    def contains(
+        self,
+        key: str
+    ) -> bool:
+        """
+        Returns True if the image exists.
+        """
+
+        return key in self._images
+
+    def remove(
+        self,
+        key: str
+    ) -> None:
+        """
+        Removes a loaded image.
+
+        Raises:
+            KeyError:
+                If the image does not exist.
+        """
+
+        if key not in self._images:
+            raise KeyError(
+                f"Image '{key}' does not exist."
+            )
+
+        del self._images[key]
+
+    @property
+    def count(self) -> int:
+        """
+        Returns the number of loaded images.
+        """
+
+        return len(self._images)
+
+    @property
+    def loaded_keys(self) -> tuple[str, ...]:
+        """
+        Returns all loaded image keys.
+        """
+
+        return tuple(self._images.keys())
+
+    def clear(self) -> None:
+        """
+        Removes every loaded image.
+        """
+
+        self._images.clear()
+
+======================================================================
+FILE: view/ui/graphics/img.py
+======================================================================
+from __future__ import annotations
+
+import pathlib
+import ctypes
+
+import cv2
+import numpy as np
+
+class Img:
+    def __init__(self):
+        self.img = None
+
+    def read(self, path: str | pathlib.Path,
+             size: tuple[int, int] | None = None,
+             keep_aspect: bool = False,
+             interpolation: int = cv2.INTER_AREA) -> "Img":
+        """
+        Load `path` into self.img and **optionally resize**.
+
+        Parameters
+        ----------
+        path : str | Path
+            Image file to load.
+        size : (width, height) | None
+            Target size in pixels.  If None, keep original.
+        keep_aspect : bool
+            • False  → resize exactly to `size`
+            • True   → shrink so the *longer* side fits `size` while
+                       preserving aspect ratio (no cropping).
+        interpolation : OpenCV flag
+            E.g.  `cv2.INTER_AREA` for shrink, `cv2.INTER_LINEAR` for enlarge.
+
+        Returns
+        -------
+        Img
+            `self`, so you can chain:  `sprite = Img().read("foo.png", (64,64))`
+        """
+        path = str(path)
+        self.img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+        if self.img is None:
+            # OpenCV may fail on Windows paths containing non-ASCII characters.
+            try:
+                raw = np.fromfile(path, dtype=np.uint8)
+                if raw.size > 0:
+                    self.img = cv2.imdecode(raw, cv2.IMREAD_UNCHANGED)
+            except OSError:
+                self.img = None
+
+        if self.img is None:
+            raise FileNotFoundError(f"Cannot load image: {path}")
+
+        if size is not None:
+            target_w, target_h = size
+            h, w = self.img.shape[:2]
+
+            if keep_aspect:
+                scale = min(target_w / w, target_h / h)
+                new_w, new_h = int(w * scale), int(h * scale)
+            else:
+                new_w, new_h = target_w, target_h
+
+            self.img = cv2.resize(self.img, (new_w, new_h), interpolation=interpolation)
+
+        return self
+
+    def draw_on(self, other_img, x, y):
+        if self.img is None or other_img.img is None:
+            raise ValueError("Both images must be loaded before drawing.")
+
+        if self.img.shape[2] != other_img.img.shape[2]:
+            if self.img.shape[2] == 3 and other_img.img.shape[2] == 4:
+                self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2BGRA)
+            elif self.img.shape[2] == 4 and other_img.img.shape[2] == 3:
+                self.img = cv2.cvtColor(self.img, cv2.COLOR_BGRA2BGR)
+
+        h, w = self.img.shape[:2]
+        H, W = other_img.img.shape[:2]
+
+        if y + h > H or x + w > W:
+            raise ValueError("Logo does not fit at the specified position.")
+
+        roi = other_img.img[y:y + h, x:x + w]
+
+        if self.img.shape[2] == 4:
+            b, g, r, a = cv2.split(self.img)
+            mask = a / 255.0
+            for c in range(3):
+                roi[..., c] = (1 - mask) * roi[..., c] + mask * self.img[..., c]
+        else:
+            other_img.img[y:y + h, x:x + w] = self.img
+
+    def put_text(self, txt, x, y, font_size, color=(255, 255, 255, 255), thickness=1):
+        if self.img is None:
+            raise ValueError("Image not loaded.")
+        cv2.putText(self.img, txt, (x, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, font_size,
+                    color, thickness, cv2.LINE_AA)
+
+    @staticmethod
+    def fit_to_screen(image: np.ndarray, fill_ratio: float = 0.85) -> np.ndarray:
+        """Scale a frame down to fit the current display without distortion."""
+        try:
+            screen_width = ctypes.windll.user32.GetSystemMetrics(0)
+            screen_height = ctypes.windll.user32.GetSystemMetrics(1)
+        except (AttributeError, OSError):
+            screen_width, screen_height = 1280, 720
+
+        max_width = int(screen_width * fill_ratio)
+        max_height = int(screen_height * fill_ratio)
+        height, width = image.shape[:2]
+        scale = min(max_width / width, max_height / height, 1.0)
+        if scale == 1.0:
+            return image
+        return cv2.resize(image, (int(width * scale), int(height * scale)), interpolation=cv2.INTER_AREA)
+
+    def show(self, window_name: str = "Kung Fu Chess"):
+        if self.img is None:
+            raise ValueError("Image not loaded.")
+        cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
+        cv2.imshow(window_name, self.fit_to_screen(self.img))
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+======================================================================
+FILE: view/ui/input/coordinate_scaler.py
+======================================================================
+"""
+coordinate_scaler.py
+
+Converts between displayed (scaled-down) pixel coordinates and
+full-canvas pixel coordinates.
+
+Responsibility:
+    - One place that knows how to undo the fit-to-screen scaling
+      so that every other class can work in full-resolution coordinates.
+"""
+
+from view.ui.window.game_canvas import GameCanvas
+
+
+class CoordinateScaler:
+    """
+    Converts display pixels to full-canvas pixels.
+
+    The game canvas is rendered at a reduced size to fit the screen.
+    Mouse events from OpenCV arrive in display pixels.
+    This class converts them back to the original canvas resolution
+    so the layout calculations stay correct.
+    """
+
+    def __init__(self, canvas: GameCanvas) -> None:
+        self._canvas = canvas
+
+    def to_canvas(self, display_x: int, display_y: int) -> tuple[int, int]:
+        """
+        Converts displayed pixel coordinates to full-canvas pixel coordinates.
+        """
+        scale = self._canvas.display_scale
+        if scale <= 0:
+            return display_x, display_y
+        return int(display_x / scale), int(display_y / scale)
+
+======================================================================
+FILE: view/ui/input/ui_input_handler.py
+======================================================================
+"""
+ui_input_handler.py
+
+Handles mouse events from the game window.
+
+Responsibilities:
+    - Listen for mouse clicks.
+    - Convert display coordinates to board positions.
+    - Forward clicks to the controller.
+"""
+
+import cv2
+
+from controller.controller import Controller
+from view.ui.input.coordinate_scaler import CoordinateScaler
+from view.ui.layout.board_layout import BoardLayout
+
+
+class UiInputHandler:
+
+    def __init__(
+        self,
+        layout: BoardLayout,
+        controller: Controller,
+        scaler: CoordinateScaler,
+    ):
+        self._layout = layout
+        self._controller = controller
+        self._scaler = scaler
+
+    def handle_mouse(
+        self,
+        event: int,
+        x: int,
+        y: int,
+        flags: int,
+        param,
+    ) -> None:
+        """
+        Handles a mouse click event.
+        """
+
+        if event != cv2.EVENT_LBUTTONDOWN:
+            return
+
+        # Convert from display pixels to full-canvas pixels.
+        canvas_x, canvas_y = self._scaler.to_canvas(x, y)
+
+        if not self._layout.is_inside_board(canvas_x, canvas_y):
+            return
+
+        position = self._layout.pixel_to_cell(canvas_x, canvas_y)
+
+        self._controller.handle_position(position)
+
+======================================================================
+FILE: view/ui/layout/board_layout.py
+======================================================================
+from model.position import Position
+
+
+class BoardLayout:
+    """
+    board_layout.py
+
+    Contains the BoardLayout class.
+
+    The BoardLayout class belongs to the UI layer and is responsible
+    for calculating the graphical layout of the chess board.
+
+    Responsibilities:
+        - Calculate the board size.
+        - Calculate the size of each square.
+        - Center the board inside the window.
+        - Convert board coordinates to screen coordinates.
+        - Convert screen coordinates to board coordinates.
+
+    The class does NOT draw anything.
+    It only performs layout calculations.
+    """
+
+    def __init__(
+            self,
+            window_width: int,
+            window_height: int,
+            board_ratio: float = 0.8,
+            board_inner_ratio: float = 0.8,
+    ):
+       
+
+        self.window_width = window_width
+        self.window_height = window_height
+
+        self.board_ratio = board_ratio
+        self.board_inner_ratio = board_inner_ratio
+
+        # Board size
+        self.board_size = int(
+            min(window_width, window_height) * board_ratio
+        )
+
+        # Center the board
+        self.board_x = (window_width - self.board_size) // 2
+        self.board_y = (window_height - self.board_size) // 2
+
+        # Board.jpg has a decorative wooden frame.  The playable 8x8 area is
+        # the centered 80% of that image, so pieces must use this inner area.
+        self.inner_board_size = int(self.board_size * board_inner_ratio)
+        self.square_size = self.inner_board_size // 8
+        self.cells_x = self.board_x + (self.board_size - self.inner_board_size) // 2
+        self.cells_y = self.board_y + (self.board_size - self.inner_board_size) // 2
+
+    def cell_to_pixel(self, position: Position) -> tuple[int, int]:
+      
+
+        x = self.cells_x + position.column * self.square_size
+        y = self.cells_y + position.row * self.square_size
+
+        return x, y
+
+    def pixel_to_cell(self, x: int, y: int) -> Position:
+
+
+        column = (x - self.cells_x) // self.square_size
+        row = (y - self.cells_y) // self.square_size
+
+        return Position(row, column)
+
+    def is_inside_board(self, x: int, y: int) -> bool:
+        """
+        Checks whether a pixel is inside the board.
+        """
+
+        return (
+                self.cells_x <= x < self.cells_x + self.inner_board_size
+                and
+                self.cells_y <= y < self.cells_y + self.inner_board_size
+        )
+
+======================================================================
+FILE: view/ui/layout/motion_interpolator.py
+======================================================================
+"""
+motion_interpolator.py
+
+Calculates the sub-cell pixel position of a moving piece.
+
+Responsibility:
+    - Given a Motion and a BoardLayout, return the exact (x, y) pixel
+      coordinates that represent the piece's current visual position
+      smoothly interpolated between its source and target cells.
+"""
+
+from realtime.motion import Motion
+from view.ui.layout.board_layout import BoardLayout
+
+
+class MotionInterpolator:
+    """
+    Converts a Motion's elapsed time into a smooth pixel position.
+
+    The motion engine moves pieces cell-by-cell on the logical board.
+    This class reads elapsed_time / duration to compute a fractional
+    progress value and linearly interpolates between the source and
+    target pixel coordinates — so the piece glides across the board
+    instead of jumping from square to square.
+    """
+
+    def __init__(self, layout: BoardLayout) -> None:
+        self._layout = layout
+
+    def get_pixel_position(self, motion: Motion) -> tuple[int, int]:
+        """
+        Returns the interpolated (x, y) pixel position for a moving piece.
+
+        Parameters
+        ----------
+        motion : Motion
+            The active motion object for the piece.
+
+        Returns
+        -------
+        tuple[int, int]
+            Pixel coordinates (x, y) of the top-left corner of the piece
+            sprite, ready to pass directly to frame.draw_on().
+        """
+
+        duration = motion.duration
+        elapsed = motion.elapsed_time
+
+        # Clamp progress to [0.0, 1.0] so rounding never overshoots.
+        progress = max(0.0, min(1.0, elapsed / duration if duration > 0 else 1.0))
+
+        src_x, src_y = self._layout.cell_to_pixel(motion.source)
+        tgt_x, tgt_y = self._layout.cell_to_pixel(motion.target)
+
+        x = int(src_x + (tgt_x - src_x) * progress)
+        y = int(src_y + (tgt_y - src_y) * progress)
+
+        return x, y
+
+======================================================================
+FILE: view/ui/loop/game_loop.py
+======================================================================
+import time
+from typing import Callable
+
+
+class GameLoop:
+    """
+    Runs the main game loop.
+    """
+
+    TARGET_FPS = 60
+
+    def __init__(
+        self,
+        update: Callable[[float], None],
+        render: Callable[[], None],
+        is_running: Callable[[], bool],
+    ):
+
+        self._update = update
+        self._render = render
+        self._is_running = is_running
+
+    def run(self) -> None:
+        """
+        Starts the game loop.
+        """
+
+        previous_time = time.perf_counter()
+
+        while self._is_running():
+
+            current_time = time.perf_counter()
+
+            delta_time = current_time - previous_time
+
+            previous_time = current_time
+
+            self._update(delta_time)
+
+            self._render()
+
+            elapsed = time.perf_counter() - current_time
+
+            target_frame = 1 / self.TARGET_FPS
+
+            if elapsed < target_frame:
+
+                time.sleep(target_frame - elapsed)
+
+======================================================================
+FILE: view/ui/render/board_renderer.py
+======================================================================
+from view.ui.graphics.img import Img
+from view.ui.layout.board_layout import BoardLayout
+from view.ui.window.game_canvas import GameCanvas
+
+
+class BoardRenderer:
+    """
+    board_renderer.py
+
+    Contains the BoardRenderer class.
+
+    The BoardRenderer belongs to the UI layer and is responsible
+    for drawing the chess board on the game canvas.
+
+    Responsibilities:
+        - Draw the board image.
+        - Use the layout to determine where to draw the board.
+
+    The renderer does NOT:
+        - Load images.
+        - Calculate positions.
+        - Know anything about chess rules.
+    """
+
+    def __init__(
+            self,
+            canvas: GameCanvas,
+            layout: BoardLayout,
+            board: Img
+    ):
+        self._canvas = canvas
+        self._layout = layout
+        self._board = board
+
+    def draw(self) -> None:
+        """
+        Draw the board on the canvas.
+        """
+
+        self._board.draw_on(
+            self._canvas.canvas,
+            self._layout.board_x,
+            self._layout.board_y
+        )
+
+======================================================================
+FILE: view/ui/render/overlay_renderer.py
+======================================================================
+"""
+overlay_renderer.py
+
+Draws overlays on top of the game board.
+
+Responsibilities:
+    - Highlight the selected piece with a glowing blue border.
+    - Show legal move destinations as semi-transparent dots.
+    - Draw the game-over screen.
+"""
+
+import cv2
+import numpy as np
+
+from model.position import Position
+
+from view.ui.layout.board_layout import BoardLayout
+from view.ui.window.game_canvas import GameCanvas
+
+
+class OverlayRenderer:
+    """
+    Draws visual overlays above the board.
+    """
+
+    def __init__(
+        self,
+        canvas: GameCanvas,
+        layout: BoardLayout,
+    ):
+        self._canvas = canvas
+        self._layout = layout
+
+    def draw_selected(
+        self,
+        position: Position | None,
+    ) -> None:
+        """
+        Draws a glowing blue border around the selected cell.
+        """
+
+        if position is None:
+            return
+
+        img = self._canvas.canvas.img
+        x, y = self._layout.cell_to_pixel(position)
+        s = self._layout.square_size
+        thickness = max(3, s // 20)
+
+        # Outer glow — multiple semi-transparent rectangles expanding outward
+        for i in range(4, 0, -1):
+            alpha = 0.15 * i
+            glow_color = (255, 180, 0)  # bright blue-cyan in BGR
+            overlay = img.copy()
+            pad = i * (thickness // 2 + 1)
+            cv2.rectangle(
+                overlay,
+                (x - pad, y - pad),
+                (x + s + pad, y + s + pad),
+                glow_color,
+                thickness,
+            )
+            cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
+
+        # Solid bright border on top
+        cv2.rectangle(
+            img,
+            (x, y),
+            (x + s, y + s),
+            (255, 200, 0),   # bright cyan-blue
+            thickness,
+        )
+
+    def draw_legal_moves(
+        self,
+        positions: set[Position],
+    ) -> None:
+        """
+        Draws semi-transparent dots on all legal move destinations.
+
+        Empty squares get a small filled circle in the centre.
+        Squares occupied by an enemy piece get a ring overlay.
+        """
+
+        if not positions:
+            return
+
+        img = self._canvas.canvas.img
+        s = self._layout.square_size
+        dot_radius = max(6, s // 8)
+        ring_thickness = max(4, s // 14)
+
+        for pos in positions:
+            x, y = self._layout.cell_to_pixel(pos)
+            cx = x + s // 2
+            cy = y + s // 2
+
+            overlay = img.copy()
+            cv2.circle(overlay, (cx, cy), dot_radius, (0, 200, 0), -1)
+            cv2.addWeighted(overlay, 0.55, img, 0.45, 0, img)
+
+    def draw_game_over(self, winner: str) -> None:
+        """
+        Draws a semi-transparent dark overlay with a GAME OVER message.
+        """
+
+        img = self._canvas.canvas.img
+        h, w = img.shape[:2]
+
+        overlay = img.copy()
+        cv2.rectangle(overlay, (0, 0), (w, h), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.55, img, 0.45, 0, img)
+
+        scale = w / 1000.0
+        thickness = max(2, int(scale * 3))
+
+        def _centered_text(text: str, y_frac: float, color: tuple) -> None:
+            font = cv2.FONT_HERSHEY_DUPLEX
+            (tw, _th), _ = cv2.getTextSize(text, font, scale * 2.5, thickness)
+            tx = (w - tw) // 2
+            ty = int(h * y_frac)
+            cv2.putText(img, text, (tx + 3, ty + 3), font,
+                        scale * 2.5, (0, 0, 0), thickness + 2, cv2.LINE_AA)
+            cv2.putText(img, text, (tx, ty), font,
+                        scale * 2.5, color, thickness, cv2.LINE_AA)
+
+        _centered_text("GAME OVER", 0.42, (255, 255, 255))
+        _centered_text(winner,      0.55, (0, 215, 255))
+
+======================================================================
+FILE: view/ui/render/piece_renderer.py
+======================================================================
+"""
+piece_renderer.py
+
+Renders chess pieces on the game canvas.
+
+Responsibilities:
+    - Resolve the correct sprite for each piece based on its PieceState.
+    - Delegate frame index calculation to PieceAnimationController.
+    - Use MotionInterpolator for smooth sub-cell positioning of moving pieces.
+    - Draw the correct animation frame at the correct pixel position.
+"""
+
+from model.piece import Piece, PieceState
+
+from realtime.motion import Motion
+from view.ui.animation.animation_repository import AnimationRepository
+from view.ui.animation.animation_state import AnimationState
+from view.ui.animation.animation_state_resolver import AnimationStateResolver
+from view.ui.animation.piece_animation_controller import PieceAnimationController
+from view.ui.animation.piece_code_resolver import PieceCodeResolver
+from view.ui.layout.board_layout import BoardLayout
+from view.ui.layout.motion_interpolator import MotionInterpolator
+from view.ui.window.game_canvas import GameCanvas
+
+
+class PieceRenderer:
+    """
+    Draws chess pieces on the game canvas one frame at a time.
+    """
+
+    def __init__(
+        self,
+        canvas: GameCanvas,
+        layout: BoardLayout,
+        repository: AnimationRepository,
+    ) -> None:
+        self._canvas = canvas
+        self._layout = layout
+        self._repository = repository
+        self._interpolator = MotionInterpolator(layout)
+        self._anim_controller = PieceAnimationController()
+
+    def draw(
+        self,
+        piece: Piece,
+        active_motions: tuple[Motion, ...] | None = None,
+    ) -> None:
+        """
+        Draws a single chess piece at its current visual position.
+
+        Parameters
+        ----------
+        piece : Piece
+            The piece to draw.
+        active_motions : tuple[Motion, ...] | None
+            Immutable snapshot of active motions from the game engine.
+            Used to compute sub-cell interpolated position for moving pieces.
+        """
+
+        # Captured pieces are removed from the board — skip silently.
+        if piece.state == PieceState.CAPTURED:
+            self._anim_controller.reset(piece)
+            return
+
+        piece_code = PieceCodeResolver.resolve(piece)
+        anim_state = AnimationStateResolver.resolve(piece.state)
+
+        # Load animation for the resolved state; fall back to IDLE if the
+        # sprite folder for this state does not exist yet.
+        try:
+            animation = self._repository.get(
+                piece_code=piece_code,
+                state=anim_state,
+                size=(self._layout.square_size, self._layout.square_size),
+            )
+        except (FileNotFoundError, OSError):
+            animation = self._repository.get(
+                piece_code=piece_code,
+                state=AnimationState.IDLE,
+                size=(self._layout.square_size, self._layout.square_size),
+            )
+
+        # PieceAnimationController tracks state changes and resets the timer
+        # automatically when PieceState transitions (e.g. IDLE → MOVING).
+        frame_index = self._anim_controller.get_frame_index(piece, animation)
+        frame = animation.frames[frame_index]
+
+        # Moving pieces are drawn at their interpolated sub-cell position.
+        if piece.state == PieceState.MOVING and active_motions:
+            motion = self._find_motion(piece, active_motions)
+            if motion is not None:
+                x, y = self._interpolator.get_pixel_position(motion)
+            else:
+                x, y = self._layout.cell_to_pixel(piece.position)
+        else:
+            x, y = self._layout.cell_to_pixel(piece.position)
+
+        frame.draw_on(self._canvas.canvas, x, y)
+
+    @staticmethod
+    def _find_motion(
+        piece: Piece,
+        motions: tuple[Motion, ...],
+    ) -> Motion | None:
+        """Returns the active Motion for this piece, or None."""
+        for motion in motions:
+            if motion.piece is piece:
+                return motion
+        return None
+
+======================================================================
+FILE: view/ui/scene/game_scene.py
+======================================================================
+from model.position import Position
+from model.piece import Piece, PieceColor, PieceType
+
+from view.ui.constants.image_keys import ImageKeys
+from view.ui.constants.ui_paths import BACKGROUND_PATH, BOARD_PATH
+
+from view.ui.graphics.image_manager import ImageManager
+from view.ui.input.coordinate_scaler import CoordinateScaler
+from view.ui.input.ui_input_handler import UiInputHandler
+from view.ui.layout.board_layout import BoardLayout
+from view.ui.animation.animation_repository import AnimationRepository
+from view.ui.render.board_renderer import BoardRenderer
+from view.ui.render.overlay_renderer import OverlayRenderer
+from view.ui.render.piece_renderer import PieceRenderer
+from view.ui.window.game_canvas import GameCanvas
+from controller.controller import Controller
+from game.game_engine import GameEngine
+
+class GameScene:
+    """
+    game_scene.py
+
+    Builds and renders the game scene.
+
+    Responsibilities:
+        - Create the UI components.
+        - Coordinate all renderers.
+        - Draw the current frame.
+    """
+
+    def __init__(
+    self,
+    controller: Controller,
+    game_engine: GameEngine,):
+        self._controller = controller
+        self._game_engine = game_engine
+        self._images = ImageManager()
+
+        self._images.load(
+            ImageKeys.BACKGROUND,
+            BACKGROUND_PATH,
+        )
+
+        background = self._images.get(
+            ImageKeys.BACKGROUND
+        )
+
+        self._canvas = GameCanvas(background)
+
+        self._layout = BoardLayout(
+            window_width=self._canvas.width,
+            window_height=self._canvas.height,
+        )
+
+        self._images.load(
+            ImageKeys.BOARD,
+            BOARD_PATH,
+            size=(
+                self._layout.board_size,
+                self._layout.board_size,
+            ),
+        )
+
+        self._board_renderer = BoardRenderer(
+            canvas=self._canvas,
+            layout=self._layout,
+            board=self._images.get(
+                ImageKeys.BOARD
+            ),
+        )
+
+        self._overlay_renderer = OverlayRenderer(
+            canvas=self._canvas,
+            layout=self._layout,
+        )
+        self._piece_renderer = PieceRenderer(
+            canvas=self._canvas,
+            layout=self._layout,
+            repository=AnimationRepository(),
+        )
+        self._input_handler = UiInputHandler(
+            layout=self._layout,
+            controller=self._controller,
+            scaler=CoordinateScaler(self._canvas),
+        )
+    @property
+    def canvas(self) -> GameCanvas:
+        return self._canvas
+
+    @property
+    def layout(self) -> BoardLayout:
+        return self._layout
+
+    @property
+    def is_game_over(self) -> bool:
+        """Returns whether the game has ended."""
+        return self._game_engine.game_over
+
+    def bind_input(self) -> None:
+        """Registers this scene's mouse handler after the window exists."""
+        self._canvas.set_mouse_callback(
+            self._input_handler.handle_mouse,
+        )
+
+    def update(self, delta_time: float) -> None:
+        """Advances the game simulation by the elapsed frame time in seconds."""
+        milliseconds = round(delta_time * 1000)
+        if milliseconds > 0:
+            self._game_engine.wait(milliseconds)
+
+    def draw(
+        self,
+        selected_position: Position | None = None,
+    ) -> None:
+        """
+        Draws the current game frame.
+        """
+
+        # Erase the previous frame by resetting to the original background.
+        self._canvas.reset()
+
+        self._board_renderer.draw()
+
+        board = self._game_engine.board
+        active_motions = self._game_engine.get_motions()
+        for row in range(board.height):
+            for column in range(board.width):
+                piece = board.get_piece(Position(row, column))
+                if isinstance(piece, Piece):
+                    self._piece_renderer.draw(piece, active_motions)
+
+        if self._game_engine.game_over:
+            self._overlay_renderer.draw_game_over(
+                self._resolve_winner()
+            )
+        else:
+            selected = selected_position or self._controller.selected_position
+            self._overlay_renderer.draw_selected(selected)
+            if selected is not None:
+                legal = self._game_engine.get_legal_moves(selected)
+                self._overlay_renderer.draw_legal_moves(legal)
+
+    def _resolve_winner(self) -> str:
+        """
+        Returns a winner string by checking which king is still on the board.
+        """
+        board = self._game_engine.board
+        white_king_alive = False
+        black_king_alive = False
+
+        for row in range(board.height):
+            for column in range(board.width):
+                piece = board.get_piece(Position(row, column))
+                if isinstance(piece, Piece) and piece.type == PieceType.KING:
+                    if piece.color == PieceColor.WHITE:
+                        white_king_alive = True
+                    else:
+                        black_king_alive = True
+
+        if white_king_alive and not black_king_alive:
+            return "White wins!"
+        if black_king_alive and not white_king_alive:
+            return "Black wins!"
+        return "Game Over"
+
+    def show(self) -> None:
+        """
+        Displays the current frame.
+        """
+
+        self._canvas.present()
+
+======================================================================
+FILE: view/ui/window/game_canvas.py
+======================================================================
+import ctypes
+
+import cv2
+import numpy as np
+
+from view.ui.graphics.img import Img
+from typing import Callable
+
+
+class GameCanvas:
+    """
+    game_canvas.py
+
+    Represents the main drawing surface of the game.
+
+    Responsibilities:
+        - Store the game canvas.
+        - Reset the canvas to the background at the start of each frame.
+        - Present the current frame scaled to fit the screen.
+        - Track the display scale so mouse coordinates can be converted back
+          to canvas coordinates.
+        - Handle window events.
+    """
+
+    WINDOW_NAME = "Kung Fu Chess"
+
+    def __init__(
+        self,
+        background_source: str | Img,
+    ):
+        if isinstance(background_source, Img):
+            self._background_img = background_source.img.copy()
+        else:
+            self._background_img = Img().read(background_source).img.copy()
+
+        # Working canvas — gets reset to background at the start of every frame.
+        self._canvas = Img()
+        self._canvas.img = self._background_img.copy()
+
+        # Scale factor: canvas_pixels / display_pixels.
+        # Updated every time present() is called so mouse events can be
+        # converted back to full-resolution coordinates.
+        self._display_scale: float = 1.0
+
+        self._window_created = False
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+
+    @property
+    def canvas(self) -> Img:
+        """Returns the working canvas that renderers draw onto."""
+        return self._canvas
+
+    @property
+    def width(self) -> int:
+        return self._background_img.shape[1]
+
+    @property
+    def height(self) -> int:
+        return self._background_img.shape[0]
+
+    @property
+    def display_scale(self) -> float:
+        """
+        Ratio of full-canvas pixels to displayed pixels.
+        Use this to convert a mouse click coordinate:
+            canvas_x = display_x / display_scale
+        """
+        return self._display_scale
+
+    def to_canvas_coords(self, display_x: int, display_y: int) -> tuple[int, int]:
+        """
+        Converts displayed (scaled-down) pixel coordinates to
+        full-canvas pixel coordinates.
+
+        Responsibility: GameCanvas owns the scale, so it owns this conversion.
+        """
+        scale = self._display_scale if self._display_scale > 0 else 1.0
+        return int(display_x / scale), int(display_y / scale)
+
+    # ------------------------------------------------------------------
+    # Frame lifecycle
+    # ------------------------------------------------------------------
+
+    def reset(self) -> None:
+        """
+        Resets the working canvas to the original background.
+        Call this at the beginning of every draw() cycle so that
+        pieces and overlays from the previous frame are erased.
+        """
+        self._canvas.img = self._background_img.copy()
+
+    def _ensure_window(self) -> None:
+        """Creates the OpenCV window once."""
+        if not self._window_created:
+            cv2.namedWindow(self.WINDOW_NAME, cv2.WINDOW_KEEPRATIO)
+            self._window_created = True
+
+    def present(self) -> None:
+        """
+        Scales the current canvas to fit the screen and displays it.
+        Also updates display_scale so mouse coordinates stay accurate.
+        """
+        self._ensure_window()
+
+        # Compute scale
+        try:
+            screen_w = ctypes.windll.user32.GetSystemMetrics(0)
+            screen_h = ctypes.windll.user32.GetSystemMetrics(1)
+        except Exception:
+            screen_w, screen_h = 1280, 720
+
+        max_w = int(screen_w * 0.85)
+        max_h = int(screen_h * 0.85)
+        h, w = self._canvas.img.shape[:2]
+        scale = min(max_w / w, max_h / h, 1.0)
+        self._display_scale = scale
+
+        if scale < 1.0:
+            frame = cv2.resize(
+                self._canvas.img,
+                (int(w * scale), int(h * scale)),
+                interpolation=cv2.INTER_AREA,
+            )
+        else:
+            frame = self._canvas.img
+
+        cv2.imshow(self.WINDOW_NAME, frame)
+
+    # ------------------------------------------------------------------
+    # Events
+    # ------------------------------------------------------------------
+
+    def poll_events(self) -> int:
+        """
+        Processes window events and keyboard input.
+        Returns the key code (or -1 if no key was pressed).
+        """
+        return cv2.waitKey(1)
+
+    def is_open(self) -> bool:
+        """Returns whether the game window is still open."""
+        try:
+            visible = cv2.getWindowProperty(
+                self.WINDOW_NAME, cv2.WND_PROP_VISIBLE
+            )
+            autosize = cv2.getWindowProperty(
+                self.WINDOW_NAME, cv2.WND_PROP_AUTOSIZE
+            )
+            return visible >= 0 and autosize >= 0
+        except Exception:
+            return False
+
+    def close(self) -> None:
+        """Closes the game window."""
+        try:
+            cv2.destroyWindow(self.WINDOW_NAME)
+        except Exception:
+            pass
+        cv2.waitKey(1)
+
+    def set_mouse_callback(
+        self,
+        callback: Callable,
+    ) -> None:
+        """Registers the mouse callback on the window."""
+        cv2.setMouseCallback(self.WINDOW_NAME, callback)

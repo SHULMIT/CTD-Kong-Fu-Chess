@@ -49,6 +49,13 @@ class RealTimeArbiter:
 
         return self._motion_manager.has_motions()
 
+    def get_active_motions(self) -> tuple:
+        """
+        Returns an immutable snapshot of all active motions.
+        Safe for external callers — does not expose internal structure.
+        """
+        return self._motion_manager.get_snapshot()
+
     @property
     def last_captured_piece(self) -> Piece | None:
         """
@@ -163,4 +170,5 @@ class RealTimeArbiter:
         self._airborne_manager.jump(piece)
 
     def has_active_motions(self) -> bool:
+        """Returns whether any motions are currently active."""
         return self._motion_manager.has_motions()

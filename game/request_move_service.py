@@ -1,5 +1,15 @@
+
 """
-Handles move-request flow from validation to motion scheduling.
+Processes move requests.
+
+Responsibilities:
+    - Validate requested moves.
+    - Calculate movement duration.
+    - Schedule legal piece motions.
+    - Return the outcome of the move request.
+
+This service is responsible only for processing move requests.
+It does not manage the game state or implement chess rules.
 """
 
 from game.move_result import MoveResult
@@ -28,6 +38,19 @@ class RequestMoveService:
         self._rule_engine = rule_engine
         self._arbiter = arbiter
         self._duration_calculator = duration_calculator
+
+    def get_legal_moves(
+        self,
+        source: Position,
+    ) -> set[Position]:
+        """
+        Returns all legal destination positions for the piece at source.
+        """
+        from model.piece import Piece
+        piece = self._board.get_piece(source)
+        if not isinstance(piece, Piece):
+            return set()
+        return self._rule_engine.get_legal_moves(self._board, piece)
 
     def request_move(
         self,
@@ -58,7 +81,7 @@ class RequestMoveService:
             piece=piece,
             source=source,
             target=target,
-            duration=duration,
+        duration=duration,
         )
 
         return MoveResult.accepted()

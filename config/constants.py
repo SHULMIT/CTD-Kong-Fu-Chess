@@ -1,4 +1,5 @@
 # config/constants.py
+from pathlib import Path
 """
 כאן יש ריכוז של כל המשתנים הקבועים בעבור איטריצה 1
 
@@ -6,9 +7,12 @@
 EMPTY_SQUARE = '.'
 VALID_COLORS = {'w', 'b'}
 VALID_PIECES = {'K', 'Q', 'R', 'B', 'N', 'P'}
-MILLISECONDS_PER_CELL = 1000
-JUMP_DURATION_MILLISECONDS = 1000
+MILLISECONDS_PER_CELL = 500
+JUMP_DURATION_MILLISECONDS = 600
 CELL_SIZE = 100
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_BOARD_PATH = PROJECT_ROOT / "view" / "ui" / "assets" / "default_board.txt"
 
 BOARD_SECTION_HEADER = "Board:"
 COMMANDS_SECTION_HEADER = "Commands:"

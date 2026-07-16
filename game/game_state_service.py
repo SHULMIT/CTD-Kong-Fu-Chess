@@ -55,6 +55,10 @@ class GameStateService:
         if self._arbiter.consume_captured_king_flag():
             self._game_over = True
 
+    def get_active_motions(self) -> tuple:
+        """Returns an immutable snapshot of all active motions."""
+        return self._arbiter.get_active_motions()
+
     def jump_piece(
         self,
         piece: Piece,
