@@ -126,3 +126,23 @@ class OverlayRenderer:
 
         _centered_text("GAME OVER", 0.42, (255, 255, 255))
         _centered_text(winner,      0.55, (0, 215, 255))
+
+    def draw_status_message(self, message: str) -> None:
+        """Draw a short user-feedback message below the board."""
+        image = self._canvas.canvas.img
+        center_x = self._layout.board_x + self._layout.board_size // 2
+        text_y = self._layout.board_y + self._layout.board_size + 30
+        font = cv2.FONT_HERSHEY_DUPLEX
+        scale = 0.7
+        thickness = 2
+        (text_width, _), _ = cv2.getTextSize(message, font, scale, thickness)
+        cv2.putText(
+            image,
+            message,
+            (center_x - text_width // 2, text_y),
+            font,
+            scale,
+            (0, 0, 255),
+            thickness,
+            cv2.LINE_AA,
+        )

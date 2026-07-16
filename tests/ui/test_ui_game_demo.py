@@ -7,7 +7,6 @@ import numpy as np
 from model.piece import Piece, PieceColor, PieceType
 from model.position import Position
 from board_io.text_board_parser import TextBoardParser
-from controller.board_mapper import BoardMapper
 from controller.controller import Controller
 from game.game_engine import GameEngine
 from realtime.duration_calculator import DurationCalculator
@@ -28,7 +27,7 @@ def _create_scene(board):
         arbiter=RealTimeArbiter(board),
         duration_calculator=DurationCalculator(),
     )
-    controller = Controller(game_engine, BoardMapper())
+    controller = Controller(game_engine)
     return GameScene(controller=controller, game_engine=game_engine)
 
 

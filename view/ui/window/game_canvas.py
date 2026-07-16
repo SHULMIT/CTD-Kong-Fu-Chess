@@ -109,7 +109,7 @@ class GameCanvas:
         try:
             screen_w = ctypes.windll.user32.GetSystemMetrics(0)
             screen_h = ctypes.windll.user32.GetSystemMetrics(1)
-        except Exception:
+        except (AttributeError, OSError):
             screen_w, screen_h = 1280, 720
 
         max_w = int(screen_w * 0.85)
@@ -150,14 +150,14 @@ class GameCanvas:
                 self.WINDOW_NAME, cv2.WND_PROP_AUTOSIZE
             )
             return visible >= 0 and autosize >= 0
-        except Exception:
+        except cv2.error:
             return False
 
     def close(self) -> None:
         """Closes the game window."""
         try:
             cv2.destroyWindow(self.WINDOW_NAME)
-        except Exception:
+        except cv2.error:
             pass
         cv2.waitKey(1)
 

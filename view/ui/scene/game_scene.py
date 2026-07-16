@@ -1,3 +1,5 @@
+import time
+
 from model.position import Position
 from model.piece import Piece, PieceColor, PieceType
 
@@ -19,6 +21,8 @@ from game.game_engine import GameEngine
 
 class GameScene:
     """
+
+    STATUS_MESSAGE_DURATION_SECONDS = 2.0
     game_scene.py
 
     Builds and renders the game scene.
@@ -88,7 +92,10 @@ class GameScene:
             layout=self._layout,
             controller=self._controller,
             scaler=CoordinateScaler(self._canvas),
+            report_user_error=self._show_user_error,
         )
+        self._status_message: str | None = None
+        self._status_message_expires_at = 0.0
     @property
     def canvas(self) -> GameCanvas:
         return self._canvas
@@ -137,6 +144,8 @@ class GameScene:
 
         self._player_activity_renderer.draw()
 
+        self._draw_status_message()
+
         if self._game_engine.game_over:
             self._overlay_renderer.draw_game_over(
                 self._resolve_winner()
@@ -170,6 +179,21 @@ class GameScene:
         if black_king_alive and not white_king_alive:
             return "Black wins!"
         return "Game Over"
+
+    def _show_user_error(self, message: str) -> None:
+        """Shows an expected input error without interrupting the game loop."""
+        self._status_message = message
+        self._status_message_expires_at = (
+            time.perf_counter() + self.STATUS_MESSAGE_DURATION_SECONDS
+        )
+
+    def _draw_status_message(self) -> None:
+        if self._status_message is None:
+            return
+        if time.perf_counter() >= self._status_message_expires_at:
+            self._status_message = None
+            return
+        self._overlay_renderer.draw_status_message(self._status_message)
 
     def show(self) -> None:
         """

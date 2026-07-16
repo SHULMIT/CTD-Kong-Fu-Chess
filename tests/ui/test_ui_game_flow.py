@@ -1,6 +1,5 @@
 from config.constants import DEFAULT_BOARD_PATH
 from board_io.board_loader import BoardLoader
-from controller.board_mapper import BoardMapper
 from controller.controller import Controller
 from game.game_engine import GameEngine
 from model.piece import Piece
@@ -19,7 +18,7 @@ def _build_game():
         arbiter=RealTimeArbiter(board),
         duration_calculator=DurationCalculator(),
     )
-    controller = Controller(game_engine, BoardMapper())
+    controller = Controller(game_engine)
     return board, game_engine, controller, GameScene(controller, game_engine)
 
 

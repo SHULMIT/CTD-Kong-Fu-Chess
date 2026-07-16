@@ -10,8 +10,10 @@ Responsibilities:
 """
 
 import cv2
+from typing import Callable
 
 from controller.controller import Controller
+from errors.user_input_errors import ClickOutsideBoardError, UserInputError
 from view.ui.input.coordinate_scaler import CoordinateScaler
 from view.ui.layout.board_layout import BoardLayout
 
@@ -23,10 +25,12 @@ class UiInputHandler:
         layout: BoardLayout,
         controller: Controller,
         scaler: CoordinateScaler,
+        report_user_error: Callable[[str], None],
     ):
         self._layout = layout
         self._controller = controller
         self._scaler = scaler
+        self._report_user_error = report_user_error
 
     def handle_mouse(
         self,
@@ -50,12 +54,18 @@ class UiInputHandler:
         canvas_x, canvas_y = self._scaler.to_canvas(x, y)
 
         if not self._layout.is_inside_board(canvas_x, canvas_y):
+            self._report_user_error(
+                str(ClickOutsideBoardError()).replace("_", " ")
+            )
             return
 
         position = self._layout.pixel_to_cell(canvas_x, canvas_y)
 
-        if event == cv2.EVENT_RBUTTONDOWN:
-            self._controller.jump_at(position)
-            return
+        try:
+            if event == cv2.EVENT_RBUTTONDOWN:
+                self._controller.jump_at(position)
+                return
 
-        self._controller.handle_position(position)
+            self._controller.handle_position(position)
+        except UserInputError as error:
+            self._report_user_error(str(error).replace("_", " "))
