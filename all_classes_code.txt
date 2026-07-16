@@ -67,6 +67,7 @@ from controller.controller import Controller
 from app.game_application import GameApplication
 
 from game.game_engine import GameEngine
+from game.player_activity_service import PlayerActivityService
 
 from realtime.duration_calculator import DurationCalculator
 from realtime.real_time_arbiter import RealTimeArbiter
@@ -87,8 +88,11 @@ class GameFactory:
 
         rule_engine = RuleEngine()
 
+        player_activity = PlayerActivityService()
+
         arbiter = RealTimeArbiter(
-            board
+            board,
+            player_activity=player_activity,
         )
 
         duration_calculator = DurationCalculator()
@@ -98,6 +102,7 @@ class GameFactory:
             rule_engine=rule_engine,
             arbiter=arbiter,
             duration_calculator=duration_calculator,
+            player_activity=player_activity,
         )
 
         controller = Controller(
@@ -527,6 +532,7 @@ It acts as the central facade of the game layer.
 """
 
 from game.move_result import MoveReason, MoveResult
+from game.player_activity_service import PlayerActivityService
 from game.game_query_service import GameQueryService
 from game.game_state_service import GameStateService
 from game.request_move_service import RequestMoveService
@@ -549,7 +555,10 @@ class GameEngine:
 		rule_engine: RuleEngine,
 		arbiter: RealTimeArbiter,
 		duration_calculator: DurationCalculator,
+		player_activity: PlayerActivityService | None = None,
 	):
+		self._player_activity = player_activity or PlayerActivityService()
+		arbiter.set_player_activity(self._player_activity)
 		self._query_service = GameQueryService(board)
 		self._state_service = GameStateService(arbiter)
 		self._request_move_service = RequestMoveService(
@@ -557,6 +566,7 @@ class GameEngine:
 			rule_engine=rule_engine,
 			arbiter=arbiter,
 			duration_calculator=duration_calculator,
+			player_activity=self._player_activity,
 		)
 
 	@property
@@ -566,6 +576,11 @@ class GameEngine:
 	@property
 	def game_over(self) -> bool:
 		return self._state_service.game_over
+
+	@property
+	def player_activity(self) -> PlayerActivityService:
+		"""Returns the action and score data for the current game."""
+		return self._player_activity
 
 	def request_move(
 		self,
@@ -606,6 +621,12 @@ class GameEngine:
 			raise JumpEmptySourceError()
 
 		self._state_service.jump_piece(piece)
+		self._player_activity.record_jump(
+			player=piece.color,
+			piece_type=piece.type,
+			position=position,
+			timestamp_milliseconds=self._state_service.current_time,
+		)
 
 	def is_inside(self, position: Position) -> bool:
 		return self._query_service.is_inside(position)
@@ -744,6 +765,11 @@ class GameStateService:
         """
 
         return self._game_over
+
+    @property
+    def current_time(self) -> int:
+        """Returns the current simulation time in milliseconds."""
+        return self._arbiter.current_time
 
     def mark_game_over(self) -> None:
         """
@@ -895,6 +921,130 @@ class MoveResult:
         )
 
 ======================================================================
+FILE: game/player_activity_service.py
+======================================================================
+"""Stores the actions and score for each player in one game."""
+
+from dataclasses import dataclass
+
+from model.piece import PieceColor, PieceType
+from model.position import Position
+
+
+@dataclass(frozen=True)
+class PlayerAction:
+    """A single player action, timestamped on the simulation clock."""
+
+    player: PieceColor
+    description: str
+    timestamp_milliseconds: int
+
+
+class PlayerActivityService:
+    """Owns player-visible action history and capture scores."""
+
+    _PIECE_POINTS = {
+        PieceType.PAWN: 1,
+        PieceType.KNIGHT: 3,
+        PieceType.BISHOP: 3,
+        PieceType.ROOK: 5,
+        PieceType.QUEEN: 9,
+        PieceType.KING: 0,
+    }
+
+    def __init__(self) -> None:
+        self._actions: list[PlayerAction] = []
+        self._scores = {
+            PieceColor.WHITE: 0,
+            PieceColor.BLACK: 0,
+        }
+
+    def record_move(
+        self,
+        player: PieceColor,
+        piece_type: PieceType,
+        source: Position,
+        target: Position,
+        timestamp_milliseconds: int,
+    ) -> None:
+        """Records a successfully scheduled move."""
+
+        self._record_action(
+            player=player,
+            description=(
+                f"{piece_type.name.title()} "
+                f"{self._format_position(source)} -> "
+                f"{self._format_position(target)}"
+            ),
+            timestamp_milliseconds=timestamp_milliseconds,
+        )
+
+    def record_jump(
+        self,
+        player: PieceColor,
+        piece_type: PieceType,
+        position: Position,
+        timestamp_milliseconds: int,
+    ) -> None:
+        """Records a jump started by a player."""
+
+        self._record_action(
+            player=player,
+            description=(
+                f"{piece_type.name.title()} jumps at "
+                f"{self._format_position(position)}"
+            ),
+            timestamp_milliseconds=timestamp_milliseconds,
+        )
+
+    def record_capture(
+        self,
+        player: PieceColor,
+        captured_piece_type: PieceType,
+    ) -> None:
+        """Awards points to the player who captured a piece."""
+
+        self._scores[player] += self._PIECE_POINTS[captured_piece_type]
+
+    def get_actions(
+        self,
+        player: PieceColor,
+    ) -> tuple[PlayerAction, ...]:
+        """Returns the player's actions in execution order."""
+
+        return tuple(
+            action
+            for action in self._actions
+            if action.player == player
+        )
+
+    def get_score(
+        self,
+        player: PieceColor,
+    ) -> int:
+        """Returns the player's accumulated capture score."""
+
+        return self._scores[player]
+
+    def _record_action(
+        self,
+        player: PieceColor,
+        description: str,
+        timestamp_milliseconds: int,
+    ) -> None:
+        self._actions.append(
+            PlayerAction(
+                player=player,
+                description=description,
+                timestamp_milliseconds=timestamp_milliseconds,
+            )
+        )
+
+    @staticmethod
+    def _format_position(position: Position) -> str:
+        return f"{chr(ord('A') + position.column)}{8 - position.row}"
+
+======================================================================
 FILE: game/request_move_service.py
 ======================================================================
 
@@ -912,6 +1062,7 @@ It does not manage the game state or implement chess rules.
 """
 
 from game.move_result import MoveResult
+from game.player_activity_service import PlayerActivityService
 from model.board import Board
 from model.position import Position
 from realtime.duration_calculator import DurationCalculator
@@ -932,11 +1083,13 @@ class RequestMoveService:
         rule_engine: RuleEngine,
         arbiter: RealTimeArbiter,
         duration_calculator: DurationCalculator,
+        player_activity: PlayerActivityService | None = None,
     ):
         self._board = board
         self._rule_engine = rule_engine
         self._arbiter = arbiter
         self._duration_calculator = duration_calculator
+        self._player_activity = player_activity
 
     def get_legal_moves(
         self,
@@ -982,6 +1135,15 @@ class RequestMoveService:
             target=target,
         duration=duration,
         )
+
+        if self._player_activity is not None:
+            self._player_activity.record_move(
+                player=piece.color,
+                piece_type=piece.type,
+                source=source,
+                target=target,
+                timestamp_milliseconds=self._arbiter.current_time,
+            )
 
         return MoveResult.accepted()
 
@@ -1364,10 +1526,10 @@ from model.piece import Piece, PieceState
 
 class AirborneManager:
     """
-    Owns the airborne timer state and landing lifecycle.
+    Owns the airborne timer state.
 
     This service has a single responsibility:
-    manage jump timers and transition pieces back to IDLE on landing.
+    manage jump timers.
     """
 
     def __init__(
@@ -1416,20 +1578,27 @@ class AirborneManager:
 
         return min(self._airborne_timers.values())
 
-    def land_finished_pieces(self) -> None:
+    def consume_finished_landings(
+        self,
+    ) -> list[Piece]:
         """
-        Lands all pieces whose airborne timer completed.
+        Returns and removes pieces whose airborne timers completed.
         """
 
-        for piece, remaining_time in list(self._airborne_timers.items()):
-            if remaining_time > 0:
+        landed = []
+
+        for piece, remaining in list(
+            self._airborne_timers.items()
+        ):
+
+            if remaining > 0:
                 continue
 
-            # A captured piece may already have a terminal state.
-            if piece.state == PieceState.AIRBORNE:
-                piece.state = PieceState.IDLE
+            landed.append(piece)
 
             self._airborne_timers.pop(piece)
+
+        return landed
 
     def remove_piece(
         self,
@@ -1452,6 +1621,7 @@ from model.board import Board
 from model.piece import Piece, PieceState
 from realtime.motion import Motion
 from realtime.piece_lifecycle_service import PieceLifecycleService
+from game.player_activity_service import PlayerActivityService
 
 
 class CollisionResolver:
@@ -1461,16 +1631,24 @@ class CollisionResolver:
     Rules encoded here:
     - Later enemy arrival captures earlier arrival on same square.
     - Later friendly arrival gets stuck on previous square.
-    - Airborne defender captures the arriving attacker.
     """
 
     def __init__(
         self,
         board: Board,
         lifecycle: PieceLifecycleService,
+        player_activity: PlayerActivityService | None = None,
     ):
         self._board = board
         self._lifecycle = lifecycle
+        self._player_activity = player_activity
+
+    def set_player_activity(
+        self,
+        player_activity: PlayerActivityService,
+    ) -> None:
+        """Sets the score observer for future captures."""
+        self._player_activity = player_activity
 
     def resolve_step(
         self,
@@ -1491,14 +1669,6 @@ class CollisionResolver:
         target_piece = self._board.get_piece(target_position)
 
         if isinstance(target_piece, Piece):
-            if target_piece.state == PieceState.AIRBORNE:
-                self._lifecycle.capture_piece(
-                    piece=moving_piece,
-                    position=source_position,
-                )
-                motion.stop()
-                return
-
             if moving_piece.color == target_piece.color:
                 moving_piece.state = PieceState.IDLE
                 motion.stop()
@@ -1508,6 +1678,11 @@ class CollisionResolver:
                 piece=target_piece,
                 position=target_position,
             )
+            if self._player_activity is not None:
+                self._player_activity.record_capture(
+                    player=moving_piece.color,
+                    captured_piece_type=target_piece.type,
+                )
 
         self._board.set_piece(source_position, self._board.EMPTY_CELL)
         self._board.set_piece(target_position, moving_piece)
@@ -1997,6 +2172,39 @@ class PieceLifecycleService:
         piece.state = PieceState.IDLE
         self._handle_promotion(piece)
 
+    def land_piece(
+        self,
+        piece: Piece,
+    ) -> None:
+        """
+        Finishes an airborne piece.
+
+        If another piece occupies the landing square,
+        both pieces are captured.
+        """
+
+        piece_on_square = self._board.get_piece(
+            piece.position
+        )
+
+        if (
+            isinstance(piece_on_square, Piece)
+            and piece_on_square != piece
+        ):
+            self.capture_piece(
+                piece_on_square,
+                piece.position,
+            )
+
+            self.capture_piece(
+                piece,
+                piece.position,
+            )
+
+            return
+
+        piece.state = PieceState.IDLE
+
     def _handle_promotion(
         self,
         piece: Piece,
@@ -2029,6 +2237,7 @@ Manages piece movement over time.
 """
 
 from config.constants import JUMP_DURATION_MILLISECONDS
+from game.player_activity_service import PlayerActivityService
 from model.board import Board
 from model.piece import Piece, PieceState
 from model.position import Position
@@ -2049,6 +2258,7 @@ class RealTimeArbiter:
     def __init__(
         self,
         board: Board,
+        player_activity: PlayerActivityService | None = None,
     ):
         self._board = board
         self._motion_manager = MotionManager()
@@ -2065,6 +2275,7 @@ class RealTimeArbiter:
         self._collision_resolver = CollisionResolver(
             board=self._board,
             lifecycle=self._lifecycle,
+            player_activity=player_activity,
         )
         self._motion_sequence = 0
 
@@ -2155,7 +2366,14 @@ class RealTimeArbiter:
 
             self._resolve_ready_steps()
 
-            self._airborne_manager.land_finished_pieces()
+            landed_pieces = (
+                self._airborne_manager
+                .consume_finished_landings()
+            )
+
+            for piece in landed_pieces:
+                self._lifecycle.land_piece(piece)
+
             self._cleanup_finished_motions()
 
     def _resolve_ready_steps(self) -> None:
@@ -2198,6 +2416,18 @@ class RealTimeArbiter:
     def has_active_motions(self) -> bool:
         """Returns whether any motions are currently active."""
         return self._motion_manager.has_motions()
+
+    def set_player_activity(
+        self,
+        player_activity: PlayerActivityService,
+    ) -> None:
+        """Connects the game activity service to capture resolution."""
+        self._collision_resolver.set_player_activity(player_activity)
+
+    @property
+    def current_time(self) -> int:
+        """Returns the current simulation time in milliseconds."""
+        return self._timeline.current_time
 
 ======================================================================
 FILE: rules/bishop_rule.py
@@ -3254,6 +3484,17 @@ class PieceAnimationController:
         self._current_anim_state.pop(piece.id, None)
         self._anim_start_time.pop(piece.id, None)
 
+    def get_elapsed_seconds(
+        self,
+        piece: Piece,
+    ) -> float:
+        """Returns time elapsed since this piece entered its current state."""
+        start_time = self._anim_start_time.get(piece.id)
+        if start_time is None:
+            return 0.0
+
+        return max(0.0, time.perf_counter() - start_time)
+
     def clear(self) -> None:
         """Removes all tracked animation states."""
         self._current_anim_state.clear()
@@ -3746,7 +3987,10 @@ class UiInputHandler:
         Handles a mouse click event.
         """
 
-        if event != cv2.EVENT_LBUTTONDOWN:
+        if event not in (
+            cv2.EVENT_LBUTTONDOWN,
+            cv2.EVENT_RBUTTONDOWN,
+        ):
             return
 
         # Convert from display pixels to full-canvas pixels.
@@ -3756,6 +4000,10 @@ class UiInputHandler:
             return
 
         position = self._layout.pixel_to_cell(canvas_x, canvas_y)
+
+        if event == cv2.EVENT_RBUTTONDOWN:
+            self._controller.jump_at(position)
+            return
 
         self._controller.handle_position(position)
 
@@ -4152,6 +4400,9 @@ Responsibilities:
     - Draw the correct animation frame at the correct pixel position.
 """
 
+from math import pi, sin
+
+from config.constants import JUMP_DURATION_MILLISECONDS
 from model.piece import Piece, PieceState
 
 from realtime.motion import Motion
@@ -4237,7 +4488,26 @@ class PieceRenderer:
         else:
             x, y = self._layout.cell_to_pixel(piece.position)
 
+        if piece.state == PieceState.AIRBORNE:
+            y -= self._get_jump_height(
+                elapsed_seconds=self._anim_controller.get_elapsed_seconds(
+                    piece
+                ),
+                square_size=self._layout.square_size,
+            )
+
         frame.draw_on(self._canvas.canvas, x, y)
+
+    @staticmethod
+    def _get_jump_height(
+        elapsed_seconds: float,
+        square_size: int,
+    ) -> int:
+        """Returns a smooth up-and-down height for one jump."""
+        duration_seconds = JUMP_DURATION_MILLISECONDS / 1000
+        progress = min(elapsed_seconds / duration_seconds, 1.0)
+        peak_height = square_size * 0.35
+        return round(sin(pi * progress) * peak_height)
 
     @staticmethod
     def _find_motion(
@@ -4249,6 +4519,157 @@ class PieceRenderer:
             if motion.piece is piece:
                 return motion
         return None
+
+======================================================================
+FILE: view/ui/render/player_activity_renderer.py
+======================================================================
+"""Renders player scores and recent actions beside the board."""
+
+import cv2
+
+from game.player_activity_service import PlayerAction, PlayerActivityService
+from model.piece import PieceColor
+from view.ui.layout.board_layout import BoardLayout
+from view.ui.window.game_canvas import GameCanvas
+
+
+class PlayerActivityRenderer:
+    """Draws one compact activity panel for each player."""
+
+    _MAX_ACTIONS = 3
+
+    def __init__(
+        self,
+        canvas: GameCanvas,
+        layout: BoardLayout,
+        player_activity: PlayerActivityService,
+    ) -> None:
+        self._canvas = canvas
+        self._layout = layout
+        self._player_activity = player_activity
+
+    def draw(self) -> None:
+        """Draws the white and black player panels."""
+
+        self._draw_panel(
+            player=PieceColor.WHITE,
+            x=16,
+            width=self._layout.board_x - 32,
+            title="WHITE",
+        )
+        self._draw_panel(
+            player=PieceColor.BLACK,
+            x=self._layout.board_x + self._layout.board_size + 16,
+            width=(
+                self._canvas.width
+                - self._layout.board_x
+                - self._layout.board_size
+                - 32
+            ),
+            title="BLACK",
+        )
+
+    def _draw_panel(
+        self,
+        player: PieceColor,
+        x: int,
+        width: int,
+        title: str,
+    ) -> None:
+        if width < 120:
+            return
+
+        image = self._canvas.canvas.img
+        y = self._layout.cells_y
+        height = self._layout.inner_board_size
+        overlay = image.copy()
+        cv2.rectangle(
+            overlay,
+            (x, y),
+            (x + width, y + height),
+            (25, 25, 25),
+            -1,
+        )
+        cv2.addWeighted(overlay, 0.78, image, 0.22, 0, image)
+
+        padding = 18
+        font = cv2.FONT_HERSHEY_DUPLEX
+        header_scale = 2.34
+        body_scale = 1.74
+        text_x = x + padding
+        text_y = y + 70
+        score = self._player_activity.get_score(player)
+        header_color = (230, 230, 230)
+
+        cv2.putText(
+            image,
+            title,
+            (text_x, text_y),
+            font,
+            header_scale,
+            header_color,
+            3,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            image,
+            f"Score: {score}",
+            (text_x, text_y + 80),
+            font,
+            body_scale,
+            (0, 215, 255),
+            2,
+            cv2.LINE_AA,
+        )
+
+        actions = self._player_activity.get_actions(player)[
+            -self._MAX_ACTIONS:
+        ]
+        for index, action in enumerate(actions):
+            line_y = text_y + 190 + index * 120
+            self._draw_action(
+                action=action,
+                x=text_x,
+                y=line_y,
+                max_width=width - padding * 2,
+            )
+
+    def _draw_action(
+        self,
+        action: PlayerAction,
+        x: int,
+        y: int,
+        max_width: int,
+    ) -> None:
+        image = self._canvas.canvas.img
+        timestamp = self._format_time(action.timestamp_milliseconds)
+        text = f"{timestamp}  {action.description}"
+        text = self._truncate(text, max_width)
+
+        cv2.putText(
+            image,
+            text,
+            (x, y),
+            cv2.FONT_HERSHEY_DUPLEX,
+            1.56,
+            (245, 245, 245),
+            2,
+            cv2.LINE_AA,
+        )
+
+    @staticmethod
+    def _format_time(milliseconds: int) -> str:
+        minutes, remainder = divmod(milliseconds, 60_000)
+        seconds, remainder = divmod(remainder, 1_000)
+        return f"{minutes:02}:{seconds:02}.{remainder:03}"
+
+    @staticmethod
+    def _truncate(text: str, max_width: int) -> str:
+        font = cv2.FONT_HERSHEY_DUPLEX
+        scale = 1.56
+        while text and cv2.getTextSize(text, font, scale, 1)[0][0] > max_width:
+            text = f"{text[:-4]}..."
+        return text
 
 ======================================================================
 FILE: view/ui/scene/game_scene.py
@@ -4267,6 +4688,7 @@ from view.ui.animation.animation_repository import AnimationRepository
 from view.ui.render.board_renderer import BoardRenderer
 from view.ui.render.overlay_renderer import OverlayRenderer
 from view.ui.render.piece_renderer import PieceRenderer
+from view.ui.render.player_activity_renderer import PlayerActivityRenderer
 from view.ui.window.game_canvas import GameCanvas
 from controller.controller import Controller
 from game.game_engine import GameEngine
@@ -4333,6 +4755,11 @@ class GameScene:
             layout=self._layout,
             repository=AnimationRepository(),
         )
+        self._player_activity_renderer = PlayerActivityRenderer(
+            canvas=self._canvas,
+            layout=self._layout,
+            player_activity=self._game_engine.player_activity,
+        )
         self._input_handler = UiInputHandler(
             layout=self._layout,
             controller=self._controller,
@@ -4383,6 +4810,8 @@ class GameScene:
                 piece = board.get_piece(Position(row, column))
                 if isinstance(piece, Piece):
                     self._piece_renderer.draw(piece, active_motions)
+
+        self._player_activity_renderer.draw()
 
         if self._game_engine.game_over:
             self._overlay_renderer.draw_game_over(
