@@ -13,6 +13,7 @@ It does not manage the game state or implement chess rules.
 """
 
 from game.move_result import MoveResult
+from game.player_activity_service import PlayerActivityService
 from model.board import Board
 from model.position import Position
 from realtime.duration_calculator import DurationCalculator
@@ -33,11 +34,13 @@ class RequestMoveService:
         rule_engine: RuleEngine,
         arbiter: RealTimeArbiter,
         duration_calculator: DurationCalculator,
+        player_activity: PlayerActivityService | None = None,
     ):
         self._board = board
         self._rule_engine = rule_engine
         self._arbiter = arbiter
         self._duration_calculator = duration_calculator
+        self._player_activity = player_activity
 
     def get_legal_moves(
         self,
@@ -83,5 +86,14 @@ class RequestMoveService:
             target=target,
         duration=duration,
         )
+
+        if self._player_activity is not None:
+            self._player_activity.record_move(
+                player=piece.color,
+                piece_type=piece.type,
+                source=source,
+                target=target,
+                timestamp_milliseconds=self._arbiter.current_time,
+            )
 
         return MoveResult.accepted()

@@ -13,6 +13,7 @@ from controller.controller import Controller
 from app.game_application import GameApplication
 
 from game.game_engine import GameEngine
+from game.player_activity_service import PlayerActivityService
 
 from realtime.duration_calculator import DurationCalculator
 from realtime.real_time_arbiter import RealTimeArbiter
@@ -33,8 +34,11 @@ class GameFactory:
 
         rule_engine = RuleEngine()
 
+        player_activity = PlayerActivityService()
+
         arbiter = RealTimeArbiter(
-            board
+            board,
+            player_activity=player_activity,
         )
 
         duration_calculator = DurationCalculator()
@@ -44,6 +48,7 @@ class GameFactory:
             rule_engine=rule_engine,
             arbiter=arbiter,
             duration_calculator=duration_calculator,
+            player_activity=player_activity,
         )
 
         controller = Controller(

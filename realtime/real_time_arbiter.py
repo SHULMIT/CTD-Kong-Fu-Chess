@@ -3,6 +3,7 @@ Manages piece movement over time.
 """
 
 from config.constants import JUMP_DURATION_MILLISECONDS
+from game.player_activity_service import PlayerActivityService
 from model.board import Board
 from model.piece import Piece, PieceState
 from model.position import Position
@@ -23,6 +24,7 @@ class RealTimeArbiter:
     def __init__(
         self,
         board: Board,
+        player_activity: PlayerActivityService | None = None,
     ):
         self._board = board
         self._motion_manager = MotionManager()
@@ -39,6 +41,7 @@ class RealTimeArbiter:
         self._collision_resolver = CollisionResolver(
             board=self._board,
             lifecycle=self._lifecycle,
+            player_activity=player_activity,
         )
         self._motion_sequence = 0
 
@@ -129,7 +132,14 @@ class RealTimeArbiter:
 
             self._resolve_ready_steps()
 
-            self._airborne_manager.land_finished_pieces()
+            landed_pieces = (
+                self._airborne_manager
+                .consume_finished_landings()
+            )
+
+            for piece in landed_pieces:
+                self._lifecycle.land_piece(piece)
+
             self._cleanup_finished_motions()
 
     def _resolve_ready_steps(self) -> None:
@@ -172,3 +182,15 @@ class RealTimeArbiter:
     def has_active_motions(self) -> bool:
         """Returns whether any motions are currently active."""
         return self._motion_manager.has_motions()
+
+    def set_player_activity(
+        self,
+        player_activity: PlayerActivityService,
+    ) -> None:
+        """Connects the game activity service to capture resolution."""
+        self._collision_resolver.set_player_activity(player_activity)
+
+    @property
+    def current_time(self) -> int:
+        """Returns the current simulation time in milliseconds."""
+        return self._timeline.current_time

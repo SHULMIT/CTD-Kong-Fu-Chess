@@ -12,6 +12,7 @@ from view.ui.animation.animation_repository import AnimationRepository
 from view.ui.render.board_renderer import BoardRenderer
 from view.ui.render.overlay_renderer import OverlayRenderer
 from view.ui.render.piece_renderer import PieceRenderer
+from view.ui.render.player_activity_renderer import PlayerActivityRenderer
 from view.ui.window.game_canvas import GameCanvas
 from controller.controller import Controller
 from game.game_engine import GameEngine
@@ -78,6 +79,11 @@ class GameScene:
             layout=self._layout,
             repository=AnimationRepository(),
         )
+        self._player_activity_renderer = PlayerActivityRenderer(
+            canvas=self._canvas,
+            layout=self._layout,
+            player_activity=self._game_engine.player_activity,
+        )
         self._input_handler = UiInputHandler(
             layout=self._layout,
             controller=self._controller,
@@ -128,6 +134,8 @@ class GameScene:
                 piece = board.get_piece(Position(row, column))
                 if isinstance(piece, Piece):
                     self._piece_renderer.draw(piece, active_motions)
+
+        self._player_activity_renderer.draw()
 
         if self._game_engine.game_over:
             self._overlay_renderer.draw_game_over(

@@ -86,6 +86,39 @@ class PieceLifecycleService:
         piece.state = PieceState.IDLE
         self._handle_promotion(piece)
 
+    def land_piece(
+        self,
+        piece: Piece,
+    ) -> None:
+        """
+        Finishes an airborne piece.
+
+        If another piece occupies the landing square,
+        both pieces are captured.
+        """
+
+        piece_on_square = self._board.get_piece(
+            piece.position
+        )
+
+        if (
+            isinstance(piece_on_square, Piece)
+            and piece_on_square != piece
+        ):
+            self.capture_piece(
+                piece_on_square,
+                piece.position,
+            )
+
+            self.capture_piece(
+                piece,
+                piece.position,
+            )
+
+            return
+
+        piece.state = PieceState.IDLE
+
     def _handle_promotion(
         self,
         piece: Piece,

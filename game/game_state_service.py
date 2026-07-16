@@ -35,6 +35,11 @@ class GameStateService:
 
         return self._game_over
 
+    @property
+    def current_time(self) -> int:
+        """Returns the current simulation time in milliseconds."""
+        return self._arbiter.current_time
+
     def mark_game_over(self) -> None:
         """
         Marks game as ended.

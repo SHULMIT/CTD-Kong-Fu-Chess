@@ -40,7 +40,10 @@ class UiInputHandler:
         Handles a mouse click event.
         """
 
-        if event != cv2.EVENT_LBUTTONDOWN:
+        if event not in (
+            cv2.EVENT_LBUTTONDOWN,
+            cv2.EVENT_RBUTTONDOWN,
+        ):
             return
 
         # Convert from display pixels to full-canvas pixels.
@@ -50,5 +53,9 @@ class UiInputHandler:
             return
 
         position = self._layout.pixel_to_cell(canvas_x, canvas_y)
+
+        if event == cv2.EVENT_RBUTTONDOWN:
+            self._controller.jump_at(position)
+            return
 
         self._controller.handle_position(position)

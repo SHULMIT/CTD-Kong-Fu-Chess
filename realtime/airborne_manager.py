@@ -7,10 +7,10 @@ from model.piece import Piece, PieceState
 
 class AirborneManager:
     """
-    Owns the airborne timer state and landing lifecycle.
+    Owns the airborne timer state.
 
     This service has a single responsibility:
-    manage jump timers and transition pieces back to IDLE on landing.
+    manage jump timers.
     """
 
     def __init__(
@@ -59,20 +59,27 @@ class AirborneManager:
 
         return min(self._airborne_timers.values())
 
-    def land_finished_pieces(self) -> None:
+    def consume_finished_landings(
+        self,
+    ) -> list[Piece]:
         """
-        Lands all pieces whose airborne timer completed.
+        Returns and removes pieces whose airborne timers completed.
         """
 
-        for piece, remaining_time in list(self._airborne_timers.items()):
-            if remaining_time > 0:
+        landed = []
+
+        for piece, remaining in list(
+            self._airborne_timers.items()
+        ):
+
+            if remaining > 0:
                 continue
 
-            # A captured piece may already have a terminal state.
-            if piece.state == PieceState.AIRBORNE:
-                piece.state = PieceState.IDLE
+            landed.append(piece)
 
             self._airborne_timers.pop(piece)
+
+        return landed
 
     def remove_piece(
         self,

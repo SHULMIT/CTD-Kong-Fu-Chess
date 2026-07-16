@@ -13,6 +13,7 @@ It acts as the central facade of the game layer.
 """
 
 from game.move_result import MoveReason, MoveResult
+from game.player_activity_service import PlayerActivityService
 from game.game_query_service import GameQueryService
 from game.game_state_service import GameStateService
 from game.request_move_service import RequestMoveService
@@ -35,7 +36,10 @@ class GameEngine:
 		rule_engine: RuleEngine,
 		arbiter: RealTimeArbiter,
 		duration_calculator: DurationCalculator,
+		player_activity: PlayerActivityService | None = None,
 	):
+		self._player_activity = player_activity or PlayerActivityService()
+		arbiter.set_player_activity(self._player_activity)
 		self._query_service = GameQueryService(board)
 		self._state_service = GameStateService(arbiter)
 		self._request_move_service = RequestMoveService(
@@ -43,6 +47,7 @@ class GameEngine:
 			rule_engine=rule_engine,
 			arbiter=arbiter,
 			duration_calculator=duration_calculator,
+			player_activity=self._player_activity,
 		)
 
 	@property
@@ -52,6 +57,11 @@ class GameEngine:
 	@property
 	def game_over(self) -> bool:
 		return self._state_service.game_over
+
+	@property
+	def player_activity(self) -> PlayerActivityService:
+		"""Returns the action and score data for the current game."""
+		return self._player_activity
 
 	def request_move(
 		self,
@@ -92,6 +102,12 @@ class GameEngine:
 			raise JumpEmptySourceError()
 
 		self._state_service.jump_piece(piece)
+		self._player_activity.record_jump(
+			player=piece.color,
+			piece_type=piece.type,
+			position=position,
+			timestamp_milliseconds=self._state_service.current_time,
+		)
 
 	def is_inside(self, position: Position) -> bool:
 		return self._query_service.is_inside(position)
