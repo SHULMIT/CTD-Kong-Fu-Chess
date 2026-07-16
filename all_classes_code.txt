@@ -3501,6 +3501,88 @@ class PieceAnimationController:
         self._anim_start_time.clear()
 
 ======================================================================
+FILE: view/ui/animation/piece_animation_service.py
+======================================================================
+"""Resolve the visual render state for a single piece."""
+
+from dataclasses import dataclass
+from math import pi, sin
+
+from config.constants import (
+    JUMP_DURATION_MILLISECONDS,
+    JUMP_HEIGHT_RATIO,
+    MILLISECONDS_PER_SECOND,
+)
+from model.piece import Piece, PieceState
+from realtime.motion import Motion
+from view.ui.animation.animation_repository import AnimationRepository
+from view.ui.animation.animation_state import AnimationState
+from view.ui.animation.animation_state_resolver import AnimationStateResolver
+from view.ui.animation.piece_animation_controller import PieceAnimationController
+from view.ui.animation.piece_code_resolver import PieceCodeResolver
+from view.ui.graphics.img import Img as AnimationFrame
+from view.ui.layout.board_layout import BoardLayout
+from view.ui.layout.motion_interpolator import MotionInterpolator
+
+
+@dataclass(frozen=True)
+class PieceRenderState:
+    frame: AnimationFrame
+    x: float
+    y: float
+
+
+class PieceAnimationService:
+    """Calculates the complete visual state of a piece."""
+
+    def __init__(self, layout: BoardLayout, repository: AnimationRepository,
+                 animation_controller: PieceAnimationController | None = None) -> None:
+        self._layout = layout
+        self._repository = repository
+        self._interpolator = MotionInterpolator(layout)
+        self._anim_controller = animation_controller or PieceAnimationController()
+
+    def get_render_state(self, piece: Piece,
+                         active_motions: tuple[Motion, ...] | None = None
+                         ) -> PieceRenderState | None:
+        if piece.state == PieceState.CAPTURED:
+            self._anim_controller.reset(piece)
+            return None
+
+        piece_code = PieceCodeResolver.resolve(piece)
+        anim_state = AnimationStateResolver.resolve(piece.state)
+        try:
+            animation = self._repository.get(
+                piece_code=piece_code, state=anim_state,
+                size=(self._layout.square_size, self._layout.square_size))
+        except (FileNotFoundError, OSError):
+            animation = self._repository.get(
+                piece_code=piece_code, state=AnimationState.IDLE,
+                size=(self._layout.square_size, self._layout.square_size))
+
+        frame = animation.frames[self._anim_controller.get_frame_index(piece, animation)]
+        x, y = self._layout.cell_to_pixel(piece.position)
+        if piece.state == PieceState.MOVING and active_motions:
+            motion = self._find_motion(piece, active_motions)
+            if motion is not None:
+                x, y = self._interpolator.get_pixel_position(motion)
+        if piece.state == PieceState.AIRBORNE:
+            y -= self._get_jump_height(
+                self._anim_controller.get_elapsed_seconds(piece), self._layout.square_size)
+        return PieceRenderState(frame=frame, x=x, y=y)
+
+    @staticmethod
+    def _get_jump_height(elapsed_seconds: float, square_size: int) -> int:
+        """Return the height for the same duration used by AirborneManager."""
+        duration_seconds = JUMP_DURATION_MILLISECONDS / MILLISECONDS_PER_SECOND
+        progress = min(elapsed_seconds / duration_seconds, 1.0)
+        return round(sin(pi * progress) * square_size * JUMP_HEIGHT_RATIO)
+
+    @staticmethod
+    def _find_motion(piece: Piece, motions: tuple[Motion, ...]) -> Motion | None:
+        return next((motion for motion in motions if motion.piece is piece), None)
+
+======================================================================
 FILE: view/ui/animation/piece_code_resolver.py
 ======================================================================
 from model.piece import Piece, PieceColor, PieceType
@@ -3957,8 +4039,10 @@ Responsibilities:
 """
 
 import cv2
+from typing import Callable
 
 from controller.controller import Controller
+from errors.user_input_errors import ClickOutsideBoardError, UserInputError
 from view.ui.input.coordinate_scaler import CoordinateScaler
 from view.ui.layout.board_layout import BoardLayout
 
@@ -3970,10 +4054,12 @@ class UiInputHandler:
         layout: BoardLayout,
         controller: Controller,
         scaler: CoordinateScaler,
+        report_user_error: Callable[[str], None],
     ):
         self._layout = layout
         self._controller = controller
         self._scaler = scaler
+        self._report_user_error = report_user_error
 
     def handle_mouse(
         self,
@@ -3997,15 +4083,21 @@ class UiInputHandler:
         canvas_x, canvas_y = self._scaler.to_canvas(x, y)
 
         if not self._layout.is_inside_board(canvas_x, canvas_y):
+            self._report_user_error(
+                str(ClickOutsideBoardError()).replace("_", " ")
+            )
             return
 
         position = self._layout.pixel_to_cell(canvas_x, canvas_y)
 
-        if event == cv2.EVENT_RBUTTONDOWN:
-            self._controller.jump_at(position)
-            return
+        try:
+            if event == cv2.EVENT_RBUTTONDOWN:
+                self._controller.jump_at(position)
+                return
 
-        self._controller.handle_position(position)
+            self._controller.handle_position(position)
+        except UserInputError as error:
+            self._report_user_error(str(error).replace("_", " "))
 
 ======================================================================
 FILE: view/ui/layout/board_layout.py
@@ -4385,140 +4477,52 @@ class OverlayRenderer:
         _centered_text("GAME OVER", 0.42, (255, 255, 255))
         _centered_text(winner,      0.55, (0, 215, 255))
 
+    def draw_status_message(self, message: str) -> None:
+        """Draw a short user-feedback message below the board."""
+        image = self._canvas.canvas.img
+        center_x = self._layout.board_x + self._layout.board_size // 2
+        text_y = self._layout.board_y + self._layout.board_size + 30
+        font = cv2.FONT_HERSHEY_DUPLEX
+        scale = 0.7
+        thickness = 2
+        (text_width, _), _ = cv2.getTextSize(message, font, scale, thickness)
+        cv2.putText(
+            image,
+            message,
+            (center_x - text_width // 2, text_y),
+            font,
+            scale,
+            (0, 0, 255),
+            thickness,
+            cv2.LINE_AA,
+        )
+
 ======================================================================
 FILE: view/ui/render/piece_renderer.py
 ======================================================================
-"""
-piece_renderer.py
+"""Draw piece frames produced by :class:`PieceAnimationService`."""
 
-Renders chess pieces on the game canvas.
-
-Responsibilities:
-    - Resolve the correct sprite for each piece based on its PieceState.
-    - Delegate frame index calculation to PieceAnimationController.
-    - Use MotionInterpolator for smooth sub-cell positioning of moving pieces.
-    - Draw the correct animation frame at the correct pixel position.
-"""
-
-from math import pi, sin
-
-from config.constants import JUMP_DURATION_MILLISECONDS
-from model.piece import Piece, PieceState
-
+from model.piece import Piece
 from realtime.motion import Motion
 from view.ui.animation.animation_repository import AnimationRepository
-from view.ui.animation.animation_state import AnimationState
-from view.ui.animation.animation_state_resolver import AnimationStateResolver
-from view.ui.animation.piece_animation_controller import PieceAnimationController
-from view.ui.animation.piece_code_resolver import PieceCodeResolver
+from view.ui.animation.piece_animation_service import PieceAnimationService
 from view.ui.layout.board_layout import BoardLayout
-from view.ui.layout.motion_interpolator import MotionInterpolator
 from view.ui.window.game_canvas import GameCanvas
 
 
 class PieceRenderer:
-    """
-    Draws chess pieces on the game canvas one frame at a time.
-    """
+    """Draws chess pieces on the game canvas one frame at a time."""
 
-    def __init__(
-        self,
-        canvas: GameCanvas,
-        layout: BoardLayout,
-        repository: AnimationRepository,
-    ) -> None:
+    def __init__(self, canvas: GameCanvas, layout: BoardLayout,
+                 repository: AnimationRepository) -> None:
         self._canvas = canvas
-        self._layout = layout
-        self._repository = repository
-        self._interpolator = MotionInterpolator(layout)
-        self._anim_controller = PieceAnimationController()
+        self._animation_service = PieceAnimationService(layout, repository)
 
-    def draw(
-        self,
-        piece: Piece,
-        active_motions: tuple[Motion, ...] | None = None,
-    ) -> None:
-        """
-        Draws a single chess piece at its current visual position.
-
-        Parameters
-        ----------
-        piece : Piece
-            The piece to draw.
-        active_motions : tuple[Motion, ...] | None
-            Immutable snapshot of active motions from the game engine.
-            Used to compute sub-cell interpolated position for moving pieces.
-        """
-
-        # Captured pieces are removed from the board — skip silently.
-        if piece.state == PieceState.CAPTURED:
-            self._anim_controller.reset(piece)
-            return
-
-        piece_code = PieceCodeResolver.resolve(piece)
-        anim_state = AnimationStateResolver.resolve(piece.state)
-
-        # Load animation for the resolved state; fall back to IDLE if the
-        # sprite folder for this state does not exist yet.
-        try:
-            animation = self._repository.get(
-                piece_code=piece_code,
-                state=anim_state,
-                size=(self._layout.square_size, self._layout.square_size),
-            )
-        except (FileNotFoundError, OSError):
-            animation = self._repository.get(
-                piece_code=piece_code,
-                state=AnimationState.IDLE,
-                size=(self._layout.square_size, self._layout.square_size),
-            )
-
-        # PieceAnimationController tracks state changes and resets the timer
-        # automatically when PieceState transitions (e.g. IDLE → MOVING).
-        frame_index = self._anim_controller.get_frame_index(piece, animation)
-        frame = animation.frames[frame_index]
-
-        # Moving pieces are drawn at their interpolated sub-cell position.
-        if piece.state == PieceState.MOVING and active_motions:
-            motion = self._find_motion(piece, active_motions)
-            if motion is not None:
-                x, y = self._interpolator.get_pixel_position(motion)
-            else:
-                x, y = self._layout.cell_to_pixel(piece.position)
-        else:
-            x, y = self._layout.cell_to_pixel(piece.position)
-
-        if piece.state == PieceState.AIRBORNE:
-            y -= self._get_jump_height(
-                elapsed_seconds=self._anim_controller.get_elapsed_seconds(
-                    piece
-                ),
-                square_size=self._layout.square_size,
-            )
-
-        frame.draw_on(self._canvas.canvas, x, y)
-
-    @staticmethod
-    def _get_jump_height(
-        elapsed_seconds: float,
-        square_size: int,
-    ) -> int:
-        """Returns a smooth up-and-down height for one jump."""
-        duration_seconds = JUMP_DURATION_MILLISECONDS / 1000
-        progress = min(elapsed_seconds / duration_seconds, 1.0)
-        peak_height = square_size * 0.35
-        return round(sin(pi * progress) * peak_height)
-
-    @staticmethod
-    def _find_motion(
-        piece: Piece,
-        motions: tuple[Motion, ...],
-    ) -> Motion | None:
-        """Returns the active Motion for this piece, or None."""
-        for motion in motions:
-            if motion.piece is piece:
-                return motion
-        return None
+    def draw(self, piece: Piece,
+             active_motions: tuple[Motion, ...] | None = None) -> None:
+        render_state = self._animation_service.get_render_state(piece, active_motions)
+        if render_state is not None:
+            render_state.frame.draw_on(self._canvas.canvas, render_state.x, render_state.y)
 
 ======================================================================
 FILE: view/ui/render/player_activity_renderer.py
@@ -4674,6 +4678,8 @@ class PlayerActivityRenderer:
 ======================================================================
 FILE: view/ui/scene/game_scene.py
 ======================================================================
+import time
+
 from model.position import Position
 from model.piece import Piece, PieceColor, PieceType
 
@@ -4695,6 +4701,8 @@ from game.game_engine import GameEngine
 
 class GameScene:
     """
+
+    STATUS_MESSAGE_DURATION_SECONDS = 2.0
     game_scene.py
 
     Builds and renders the game scene.
@@ -4764,7 +4772,10 @@ class GameScene:
             layout=self._layout,
             controller=self._controller,
             scaler=CoordinateScaler(self._canvas),
+            report_user_error=self._show_user_error,
         )
+        self._status_message: str | None = None
+        self._status_message_expires_at = 0.0
     @property
     def canvas(self) -> GameCanvas:
         return self._canvas
@@ -4813,6 +4824,8 @@ class GameScene:
 
         self._player_activity_renderer.draw()
 
+        self._draw_status_message()
+
         if self._game_engine.game_over:
             self._overlay_renderer.draw_game_over(
                 self._resolve_winner()
@@ -4846,6 +4859,21 @@ class GameScene:
         if black_king_alive and not white_king_alive:
             return "Black wins!"
         return "Game Over"
+
+    def _show_user_error(self, message: str) -> None:
+        """Shows an expected input error without interrupting the game loop."""
+        self._status_message = message
+        self._status_message_expires_at = (
+            time.perf_counter() + self.STATUS_MESSAGE_DURATION_SECONDS
+        )
+
+    def _draw_status_message(self) -> None:
+        if self._status_message is None:
+            return
+        if time.perf_counter() >= self._status_message_expires_at:
+            self._status_message = None
+            return
+        self._overlay_renderer.draw_status_message(self._status_message)
 
     def show(self) -> None:
         """
@@ -4968,7 +4996,7 @@ class GameCanvas:
         try:
             screen_w = ctypes.windll.user32.GetSystemMetrics(0)
             screen_h = ctypes.windll.user32.GetSystemMetrics(1)
-        except Exception:
+        except (AttributeError, OSError):
             screen_w, screen_h = 1280, 720
 
         max_w = int(screen_w * 0.85)
@@ -5009,14 +5037,14 @@ class GameCanvas:
                 self.WINDOW_NAME, cv2.WND_PROP_AUTOSIZE
             )
             return visible >= 0 and autosize >= 0
-        except Exception:
+        except cv2.error:
             return False
 
     def close(self) -> None:
         """Closes the game window."""
         try:
             cv2.destroyWindow(self.WINDOW_NAME)
-        except Exception:
+        except cv2.error:
             pass
         cv2.waitKey(1)
 
