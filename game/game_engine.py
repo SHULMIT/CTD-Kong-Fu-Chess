@@ -23,7 +23,7 @@ from model.position import Position
 from realtime.duration_calculator import DurationCalculator
 from realtime.real_time_arbiter import RealTimeArbiter
 from rules.rule_engine import RuleEngine
-from model.piece import Piece
+from model.piece import Piece, PieceColor, PieceType
 
 class GameEngine:
 	"""
@@ -134,6 +134,30 @@ class GameEngine:
 		"""
 		return self._state_service.get_active_motions()
 
+	def get_winner(self) -> PieceColor | None:
+		"""Returns the color whose king remains on the board, if any."""
+		white_king_alive = self._has_king(PieceColor.WHITE)
+		black_king_alive = self._has_king(PieceColor.BLACK)
+
+		if white_king_alive and not black_king_alive:
+			return PieceColor.WHITE
+		if black_king_alive and not white_king_alive:
+			return PieceColor.BLACK
+		return None
+
 	def get_board(self) -> Board:
 		return self._query_service.board
-         
+
+	def _has_king(self, color: PieceColor) -> bool:
+		"""Checks the current board without exposing winner-resolution details."""
+		board = self._query_service.board
+		for row in range(board.height):
+			for column in range(board.width):
+				piece = board.get_piece(Position(row, column))
+				if (
+					isinstance(piece, Piece)
+					and piece.type == PieceType.KING
+					and piece.color == color
+				):
+					return True
+		return False

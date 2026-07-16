@@ -48,3 +48,12 @@ def test_scene_update_advances_a_move_and_can_render_afterward():
 
     assert board.get_piece(target) is pawn
     assert pawn.position == target
+
+
+def test_scene_records_user_errors_as_temporary_status_messages():
+    _board, _engine, _controller, scene = _build_game()
+
+    scene._show_user_error("Illegal move")
+
+    assert scene._status_message == "Illegal move"
+    assert scene._status_message_expires_at > 0

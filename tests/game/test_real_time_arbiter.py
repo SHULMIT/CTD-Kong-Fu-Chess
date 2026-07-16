@@ -4,7 +4,7 @@ Tests for realtime.real_time_arbiter.
 
 import unittest
 
-from config.constants import EMPTY_SQUARE
+from config.constants import EMPTY_SQUARE, JUMP_DURATION_MILLISECONDS
 from model.board import Board
 from model.piece import Piece, PieceColor, PieceState, PieceType
 from model.position import Position
@@ -126,13 +126,13 @@ class TestRealTimeArbiter(unittest.TestCase):
         self.assertIs(arbiter.last_captured_piece, defender)
         self.assertTrue(arbiter.consume_captured_king_flag())
 
-    def test_jump_lands_after_one_second(self):
+    def test_jump_lands_after_the_configured_duration(self):
         jumper = self._make_piece(1, PieceType.KING, 0, 0, PieceColor.WHITE)
         board = Board([[jumper]])
         arbiter = RealTimeArbiter(board=board)
 
         arbiter.jump(jumper)
-        arbiter.advance_time(999)
+        arbiter.advance_time(JUMP_DURATION_MILLISECONDS - 1)
 
         self.assertEqual(jumper.state, PieceState.AIRBORNE)
 

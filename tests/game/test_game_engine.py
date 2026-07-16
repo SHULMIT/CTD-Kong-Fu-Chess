@@ -8,6 +8,9 @@ import unittest
 
 from game.game_engine import GameEngine
 from game.move_result import MoveReason
+from model.board import Board
+from model.piece import Piece, PieceColor, PieceType
+from model.position import Position
 
 
 class TestGameEngine(unittest.TestCase):
@@ -106,6 +109,8 @@ class TestGameEngine(unittest.TestCase):
         source = MagicMock()
         target = MagicMock()
         piece = MagicMock()
+        piece.color = PieceColor.WHITE
+        piece.type = PieceType.ROOK
         board.get_piece.return_value = piece
 
         result = engine.request_move(source, target)
@@ -141,6 +146,8 @@ class TestGameEngine(unittest.TestCase):
         source = MagicMock()
         target = MagicMock()
         piece = MagicMock()
+        piece.color = PieceColor.WHITE
+        piece.type = PieceType.ROOK
         board.get_piece.return_value = piece
 
         result = engine.request_move(source, target)
@@ -206,3 +213,20 @@ class TestGameEngine(unittest.TestCase):
         self.assertFalse(engine.game_over)
         arbiter.advance_time.assert_called_once_with(500)
         arbiter.consume_captured_king_flag.assert_called_once_with()
+
+    def test_get_winner_returns_color_of_the_remaining_king(self):
+        black_king = Piece(
+            1,
+            PieceType.KING,
+            PieceColor.BLACK,
+            Position(0, 0),
+        )
+        board = Board([[black_king]])
+        engine = GameEngine(
+            board=board,
+            rule_engine=MagicMock(),
+            arbiter=MagicMock(),
+            duration_calculator=MagicMock(),
+        )
+
+        self.assertEqual(engine.get_winner(), PieceColor.BLACK)

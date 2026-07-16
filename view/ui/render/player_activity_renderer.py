@@ -11,8 +11,6 @@ from view.ui.window.game_canvas import GameCanvas
 class PlayerActivityRenderer:
     """Draws one compact activity panel for each player."""
 
-    _MAX_ACTIONS = 3
-
     def __init__(
         self,
         canvas: GameCanvas,
@@ -97,9 +95,7 @@ class PlayerActivityRenderer:
             cv2.LINE_AA,
         )
 
-        actions = self._player_activity.get_actions(player)[
-            -self._MAX_ACTIONS:
-        ]
+        actions = self._player_activity.get_actions(player)
         for index, action in enumerate(actions):
             line_y = text_y + 190 + index * 120
             self._draw_action(

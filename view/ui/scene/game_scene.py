@@ -1,7 +1,7 @@
 import time
 
 from model.position import Position
-from model.piece import Piece, PieceColor, PieceType
+from model.piece import Piece
 
 from view.ui.constants.image_keys import ImageKeys
 from view.ui.constants.ui_paths import BACKGROUND_PATH, BOARD_PATH
@@ -21,8 +21,6 @@ from game.game_engine import GameEngine
 
 class GameScene:
     """
-
-    STATUS_MESSAGE_DURATION_SECONDS = 2.0
     game_scene.py
 
     Builds and renders the game scene.
@@ -32,6 +30,8 @@ class GameScene:
         - Coordinate all renderers.
         - Draw the current frame.
     """
+
+    STATUS_MESSAGE_DURATION_SECONDS = 2.0
 
     def __init__(
     self,
@@ -117,6 +117,7 @@ class GameScene:
 
     def update(self, delta_time: float) -> None:
         """Advances the game simulation by the elapsed frame time in seconds."""
+        self._input_handler.update()
         milliseconds = round(delta_time * 1000)
         if milliseconds > 0:
             self._game_engine.wait(milliseconds)
@@ -147,38 +148,19 @@ class GameScene:
         self._draw_status_message()
 
         if self._game_engine.game_over:
-            self._overlay_renderer.draw_game_over(
-                self._resolve_winner()
+            winner = self._game_engine.get_winner()
+            winner_message = (
+                f"{winner.name.title()} wins!"
+                if winner is not None
+                else "Game Over"
             )
+            self._overlay_renderer.draw_game_over(winner_message)
         else:
             selected = selected_position or self._controller.selected_position
             self._overlay_renderer.draw_selected(selected)
             if selected is not None:
                 legal = self._game_engine.get_legal_moves(selected)
                 self._overlay_renderer.draw_legal_moves(legal)
-
-    def _resolve_winner(self) -> str:
-        """
-        Returns a winner string by checking which king is still on the board.
-        """
-        board = self._game_engine.board
-        white_king_alive = False
-        black_king_alive = False
-
-        for row in range(board.height):
-            for column in range(board.width):
-                piece = board.get_piece(Position(row, column))
-                if isinstance(piece, Piece) and piece.type == PieceType.KING:
-                    if piece.color == PieceColor.WHITE:
-                        white_king_alive = True
-                    else:
-                        black_king_alive = True
-
-        if white_king_alive and not black_king_alive:
-            return "White wins!"
-        if black_king_alive and not white_king_alive:
-            return "Black wins!"
-        return "Game Over"
 
     def _show_user_error(self, message: str) -> None:
         """Shows an expected input error without interrupting the game loop."""

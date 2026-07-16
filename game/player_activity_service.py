@@ -18,6 +18,8 @@ class PlayerAction:
 class PlayerActivityService:
     """Owns player-visible action history and capture scores."""
 
+    MAX_PLAYER_ACTIONS = 8
+
     _PIECE_POINTS = {
         PieceType.PAWN: 1,
         PieceType.KNIGHT: 3,
@@ -28,7 +30,10 @@ class PlayerActivityService:
     }
 
     def __init__(self) -> None:
-        self._actions: list[PlayerAction] = []
+        self._actions = {
+            PieceColor.WHITE: [],
+            PieceColor.BLACK: [],
+        }
         self._scores = {
             PieceColor.WHITE: 0,
             PieceColor.BLACK: 0,
@@ -87,11 +92,7 @@ class PlayerActivityService:
     ) -> tuple[PlayerAction, ...]:
         """Returns the player's actions in execution order."""
 
-        return tuple(
-            action
-            for action in self._actions
-            if action.player == player
-        )
+        return tuple(self._actions[player])
 
     def get_score(
         self,
@@ -107,13 +108,16 @@ class PlayerActivityService:
         description: str,
         timestamp_milliseconds: int,
     ) -> None:
-        self._actions.append(
+        history = self._actions[player]
+        history.append(
             PlayerAction(
                 player=player,
                 description=description,
                 timestamp_milliseconds=timestamp_milliseconds,
             )
         )
+        if len(history) > self.MAX_PLAYER_ACTIONS:
+            history.pop(0)
 
     @staticmethod
     def _format_position(position: Position) -> str:
