@@ -271,39 +271,6 @@ class TextBoardParser:
         return Board(grid)
 
 ======================================================================
-FILE: controller/board_mapper.py
-======================================================================
-"""
-Maps screen coordinates to board positions.
-"""
-
-from config.constants import CELL_SIZE
-from model.position import Position
-
-
-class BoardMapper:
-    """
-    Converts screen coordinates to board positions.
-    """
-
-    def to_position(
-        self,
-        x: int,
-        y: int,
-    ) -> Position:
-        """
-        Converts pixel coordinates to a board position.
-        """
-
-        row = y // CELL_SIZE
-        column = x // CELL_SIZE
-
-        return Position(
-            row=row,
-            column=column,
-        )
-
-======================================================================
 FILE: controller/controller.py
 ======================================================================
 """
@@ -542,7 +509,7 @@ from model.position import Position
 from realtime.duration_calculator import DurationCalculator
 from realtime.real_time_arbiter import RealTimeArbiter
 from rules.rule_engine import RuleEngine
-from model.piece import Piece
+from model.piece import Piece, PieceColor, PieceType
 
 class GameEngine:
 	"""
@@ -653,8 +620,33 @@ class GameEngine:
 		"""
 		return self._state_service.get_active_motions()
 
+	def get_winner(self) -> PieceColor | None:
+		"""Returns the color whose king remains on the board, if any."""
+		white_king_alive = self._has_king(PieceColor.WHITE)
+		black_king_alive = self._has_king(PieceColor.BLACK)
+
+		if white_king_alive and not black_king_alive:
+			return PieceColor.WHITE
+		if black_king_alive and not white_king_alive:
+			return PieceColor.BLACK
+		return None
+
 	def get_board(self) -> Board:
 		return self._query_service.board
+
+	def _has_king(self, color: PieceColor) -> bool:
+		"""Checks the current board without exposing winner-resolution details."""
+		board = self._query_service.board
+		for row in range(board.height):
+			for column in range(board.width):
+				piece = board.get_piece(Position(row, column))
+				if (
+					isinstance(piece, Piece)
+					and piece.type == PieceType.KING
+					and piece.color == color
+				):
+					return True
+		return False
 
 ======================================================================
 FILE: game/game_query_service.py
@@ -806,53 +798,6 @@ class GameStateService:
         self._arbiter.jump(piece)
 
 ======================================================================
-FILE: game/history/move_entry.py
-======================================================================
-from dataclasses import dataclass
-
-
-@dataclass(slots=True)
-class MoveEntry:
-    """
-    Represents a single move displayed in the UI.
-    """
-
-    time: float
-    player: str
-    piece: str
-    source: str
-    target: str
-
-======================================================================
-FILE: game/history/move_history.py
-======================================================================
-"""
-move_history.py
-
-Stores the move history displayed by the UI.
-
-Responsibilities:
-    - Store executed moves.
-    - Provide access to the move history.
-"""
-from game.history.move_entry import MoveEntry
-class MoveHistory(list[MoveEntry]):
-    """
-    Stores the chronological move history.
-    """
-
-    def add(
-        self,
-        entry: MoveEntry,
-    ) -> None:
-
-        self.append(entry)
-
-    def clear_history(self) -> None:
-
-        self.clear()
-
-======================================================================
 FILE: game/move_result.py
 ======================================================================
 """
@@ -943,6 +888,8 @@ class PlayerAction:
 class PlayerActivityService:
     """Owns player-visible action history and capture scores."""
 
+    MAX_PLAYER_ACTIONS = 8
+
     _PIECE_POINTS = {
         PieceType.PAWN: 1,
         PieceType.KNIGHT: 3,
@@ -953,7 +900,10 @@ class PlayerActivityService:
     }
 
     def __init__(self) -> None:
-        self._actions: list[PlayerAction] = []
+        self._actions = {
+            PieceColor.WHITE: [],
+            PieceColor.BLACK: [],
+        }
         self._scores = {
             PieceColor.WHITE: 0,
             PieceColor.BLACK: 0,
@@ -1012,11 +962,7 @@ class PlayerActivityService:
     ) -> tuple[PlayerAction, ...]:
         """Returns the player's actions in execution order."""
 
-        return tuple(
-            action
-            for action in self._actions
-            if action.player == player
-        )
+        return tuple(self._actions[player])
 
     def get_score(
         self,
@@ -1032,13 +978,16 @@ class PlayerActivityService:
         description: str,
         timestamp_milliseconds: int,
     ) -> None:
-        self._actions.append(
+        history = self._actions[player]
+        history.append(
             PlayerAction(
                 player=player,
                 description=description,
                 timestamp_milliseconds=timestamp_milliseconds,
             )
         )
+        if len(history) > self.MAX_PLAYER_ACTIONS:
+            history.pop(0)
 
     @staticmethod
     def _format_position(position: Position) -> str:
@@ -1209,22 +1158,6 @@ class Board:
         self.set_piece(source, self.EMPTY_CELL)
 
         piece.position = target
-
-======================================================================
-FILE: model/clock.py
-======================================================================
-class Clock:
-    def __init__(self):
-        self._time_ms = 0
-
-    @property
-    def current_time(self):
-        return self._time_ms
-
-    def tick(self, ms):
-        if ms < 0:
-            raise ValueError("Time cannot go backwards")
-        self._time_ms += ms
 
 ======================================================================
 FILE: model/piece.py
@@ -3079,134 +3012,6 @@ class RuleEngine:
         return None
 
 ======================================================================
-FILE: runner/script_runner.py
-======================================================================
-"""
-Executes textual test commands.
-
-Responsibilities:
-    - Iterate over the input command list.
-    - Parse each textual command.
-    - Dispatch every command to the appropriate system component.
-    - Delegate user actions to the Controller.
-    - Delegate game-time operations to the GameEngine.
-    - Print the board using the TextBoardFormatter.
-
-This class does not implement game logic.
-It only translates textual commands into method calls.
-"""
-
-from board_io.text_board_formatter import TextBoardFormatter
-from config.constants import (
-    COMMAND_CLICK,
-    COMMAND_JUMP,
-    COMMAND_PRINT_BOARD,
-    COMMAND_WAIT,
-)
-from controller.controller import Controller
-from errors.user_input_errors import EmptyCommandError, UnknownCommandError
-from game.game_engine import GameEngine
-
-
-class ScriptRunner:
-    """
-    Executes test commands.
-    """
-
-    def __init__(
-        self,
-        controller: Controller,
-        game_engine: GameEngine,
-    ):
-        self._controller = controller
-        self._game_engine = game_engine
-
-    def run(
-        self,
-        commands: list[str],
-    ) -> None:
-        """
-        Executes all commands.
-        """
-
-        for command in commands:
-
-            command = command.strip()
-
-            if not command:
-                raise EmptyCommandError()
-
-            if command.startswith(COMMAND_CLICK):
-                self._handle_click(command)
-
-            elif command.startswith(COMMAND_JUMP):
-                self._handle_jump(command)
-
-            elif command.startswith(COMMAND_WAIT):
-                self._handle_wait(command)
-
-            elif command == COMMAND_PRINT_BOARD:
-                self._handle_print_board()
-                
-            else:
-                raise UnknownCommandError()
-
-    def _handle_click(
-        self,
-        command: str,
-    ) -> None:
-        """
-        Executes a click command.
-        """
-
-        _, x, y = command.split()
-
-        self._controller.handle_click(
-            int(x),
-            int(y),
-        )
-
-    def _handle_jump(
-        self,
-        command: str,
-    ) -> None:
-        """
-        Executes a jump command.
-        """
-
-        _, x, y = command.split()
-
-        self._controller.jump(
-            int(x),
-            int(y),
-        )
-
-    def _handle_wait(
-        self,
-        command: str,
-    ) -> None:
-        """
-        Executes a wait command.
-        """
-
-        _, milliseconds = command.split()
-
-        self._game_engine.wait(
-            int(milliseconds),
-        )
-
-    def _handle_print_board(self) -> None:
-        """
-        Prints the current board.
-        """
-
-        print(
-            TextBoardFormatter.format(
-                self._game_engine.get_board()
-            )
-        )
-
-======================================================================
 FILE: tools/class_code_exporter.py
 ======================================================================
 """Create a single text file containing the project's implementation classes."""
@@ -4039,15 +3844,22 @@ Responsibilities:
 """
 
 import cv2
+import time
 from typing import Callable
 
 from controller.controller import Controller
-from errors.user_input_errors import ClickOutsideBoardError, UserInputError
+from errors.user_input_errors import (
+    ClickOutsideBoardError,
+    IllegalPieceMoveError,
+    UserInputError,
+)
 from view.ui.input.coordinate_scaler import CoordinateScaler
 from view.ui.layout.board_layout import BoardLayout
 
 
 class UiInputHandler:
+
+    DOUBLE_CLICK_INTERVAL_SECONDS = 0.25
 
     def __init__(
         self,
@@ -4060,6 +3872,8 @@ class UiInputHandler:
         self._controller = controller
         self._scaler = scaler
         self._report_user_error = report_user_error
+        self._pending_position = None
+        self._pending_click_time = 0.0
 
     def handle_mouse(
         self,
@@ -4073,10 +3887,8 @@ class UiInputHandler:
         Handles a mouse click event.
         """
 
-        if event not in (
-            cv2.EVENT_LBUTTONDOWN,
-            cv2.EVENT_RBUTTONDOWN,
-        ):
+        if event not in (cv2.EVENT_LBUTTONDOWN, cv2.EVENT_LBUTTONDBLCLK,
+                         cv2.EVENT_RBUTTONDOWN):
             return
 
         # Convert from display pixels to full-canvas pixels.
@@ -4090,13 +3902,49 @@ class UiInputHandler:
 
         position = self._layout.pixel_to_cell(canvas_x, canvas_y)
 
-        try:
-            if event == cv2.EVENT_RBUTTONDOWN:
-                self._controller.jump_at(position)
-                return
+        if event == cv2.EVENT_LBUTTONDOWN:
+            self._queue_normal_click(position)
+        elif event == cv2.EVENT_LBUTTONDBLCLK:
+            self._handle_double_click(position)
+        else:
+            self._perform_jump(position)
 
-            self._controller.handle_position(position)
+    def update(self) -> None:
+        """Dispatch a pending single click after the double-click interval."""
+        if self._pending_position is None:
+            return
+        if time.perf_counter() - self._pending_click_time < self.DOUBLE_CLICK_INTERVAL_SECONDS:
+            return
+
+        position = self._pending_position
+        self._pending_position = None
+        self._perform_normal_click(position)
+
+    def _queue_normal_click(self, position) -> None:
+        """Delay a normal click so a following double-click can replace it."""
+        if self._pending_position is not None and position != self._pending_position:
+            self._perform_normal_click(self._pending_position)
+        self._pending_position = position
+        self._pending_click_time = time.perf_counter()
+
+    def _handle_double_click(self, position) -> None:
+        """Cancel the pending click and make the UI jump request."""
+        self._pending_position = None
+        self._perform_jump(position)
+
+    def _perform_normal_click(self, position) -> None:
+        self._run_user_action(self._controller.handle_position, position)
+
+    def _perform_jump(self, position) -> None:
+        self._run_user_action(self._controller.jump_at, position)
+
+    def _run_user_action(self, action: Callable, position) -> None:
+        try:
+            action(position)
         except UserInputError as error:
+            if isinstance(error, IllegalPieceMoveError):
+                self._report_user_error("Illegal move")
+                return
             self._report_user_error(str(error).replace("_", " "))
 
 ======================================================================
@@ -4540,8 +4388,6 @@ from view.ui.window.game_canvas import GameCanvas
 class PlayerActivityRenderer:
     """Draws one compact activity panel for each player."""
 
-    _MAX_ACTIONS = 3
-
     def __init__(
         self,
         canvas: GameCanvas,
@@ -4626,9 +4472,7 @@ class PlayerActivityRenderer:
             cv2.LINE_AA,
         )
 
-        actions = self._player_activity.get_actions(player)[
-            -self._MAX_ACTIONS:
-        ]
+        actions = self._player_activity.get_actions(player)
         for index, action in enumerate(actions):
             line_y = text_y + 190 + index * 120
             self._draw_action(
@@ -4681,7 +4525,7 @@ FILE: view/ui/scene/game_scene.py
 import time
 
 from model.position import Position
-from model.piece import Piece, PieceColor, PieceType
+from model.piece import Piece
 
 from view.ui.constants.image_keys import ImageKeys
 from view.ui.constants.ui_paths import BACKGROUND_PATH, BOARD_PATH
@@ -4701,8 +4545,6 @@ from game.game_engine import GameEngine
 
 class GameScene:
     """
-
-    STATUS_MESSAGE_DURATION_SECONDS = 2.0
     game_scene.py
 
     Builds and renders the game scene.
@@ -4712,6 +4554,8 @@ class GameScene:
         - Coordinate all renderers.
         - Draw the current frame.
     """
+
+    STATUS_MESSAGE_DURATION_SECONDS = 2.0
 
     def __init__(
     self,
@@ -4797,6 +4641,7 @@ class GameScene:
 
     def update(self, delta_time: float) -> None:
         """Advances the game simulation by the elapsed frame time in seconds."""
+        self._input_handler.update()
         milliseconds = round(delta_time * 1000)
         if milliseconds > 0:
             self._game_engine.wait(milliseconds)
@@ -4827,38 +4672,19 @@ class GameScene:
         self._draw_status_message()
 
         if self._game_engine.game_over:
-            self._overlay_renderer.draw_game_over(
-                self._resolve_winner()
+            winner = self._game_engine.get_winner()
+            winner_message = (
+                f"{winner.name.title()} wins!"
+                if winner is not None
+                else "Game Over"
             )
+            self._overlay_renderer.draw_game_over(winner_message)
         else:
             selected = selected_position or self._controller.selected_position
             self._overlay_renderer.draw_selected(selected)
             if selected is not None:
                 legal = self._game_engine.get_legal_moves(selected)
                 self._overlay_renderer.draw_legal_moves(legal)
-
-    def _resolve_winner(self) -> str:
-        """
-        Returns a winner string by checking which king is still on the board.
-        """
-        board = self._game_engine.board
-        white_king_alive = False
-        black_king_alive = False
-
-        for row in range(board.height):
-            for column in range(board.width):
-                piece = board.get_piece(Position(row, column))
-                if isinstance(piece, Piece) and piece.type == PieceType.KING:
-                    if piece.color == PieceColor.WHITE:
-                        white_king_alive = True
-                    else:
-                        black_king_alive = True
-
-        if white_king_alive and not black_king_alive:
-            return "White wins!"
-        if black_king_alive and not white_king_alive:
-            return "Black wins!"
-        return "Game Over"
 
     def _show_user_error(self, message: str) -> None:
         """Shows an expected input error without interrupting the game loop."""
