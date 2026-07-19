@@ -106,7 +106,6 @@ class GameEngine:
 			player=piece.color,
 			piece_type=piece.type,
 			position=position,
-			timestamp_milliseconds=self._state_service.current_time,
 		)
 
 	def is_inside(self, position: Position) -> bool:

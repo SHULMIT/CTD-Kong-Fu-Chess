@@ -1,5 +1,7 @@
 """Renders player scores and recent actions beside the board."""
 
+from datetime import datetime
+
 import cv2
 
 from game.player_activity_service import PlayerAction, PlayerActivityService
@@ -10,6 +12,8 @@ from view.ui.window.game_canvas import GameCanvas
 
 class PlayerActivityRenderer:
     """Draws one compact activity panel for each player."""
+
+    MAX_VISIBLE_ACTIONS = 8
 
     def __init__(
         self,
@@ -95,7 +99,7 @@ class PlayerActivityRenderer:
             cv2.LINE_AA,
         )
 
-        actions = self._player_activity.get_actions(player)
+        actions = self._player_activity.get_actions(player)[-self.MAX_VISIBLE_ACTIONS:]
         for index, action in enumerate(actions):
             line_y = text_y + 190 + index * 120
             self._draw_action(
@@ -113,7 +117,7 @@ class PlayerActivityRenderer:
         max_width: int,
     ) -> None:
         image = self._canvas.canvas.img
-        timestamp = self._format_time(action.timestamp_milliseconds)
+        timestamp = self._format_time(action.occurred_at)
         text = f"{timestamp}  {action.description}"
         text = self._truncate(text, max_width)
 
@@ -129,10 +133,8 @@ class PlayerActivityRenderer:
         )
 
     @staticmethod
-    def _format_time(milliseconds: int) -> str:
-        minutes, remainder = divmod(milliseconds, 60_000)
-        seconds, remainder = divmod(remainder, 1_000)
-        return f"{minutes:02}:{seconds:02}.{remainder:03}"
+    def _format_time(occurred_at: datetime) -> str:
+        return occurred_at.strftime("%H:%M:%S.%f")[:-3]
 
     @staticmethod
     def _truncate(text: str, max_width: int) -> str:

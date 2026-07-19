@@ -93,7 +93,6 @@ class RequestMoveService:
                 piece_type=piece.type,
                 source=source,
                 target=target,
-                timestamp_milliseconds=self._arbiter.current_time,
             )
 
         return MoveResult.accepted()

@@ -1,6 +1,8 @@
 """Stores the actions and score for each player in one game."""
 
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Callable
 
 from model.piece import PieceColor, PieceType
 from model.position import Position
@@ -8,17 +10,15 @@ from model.position import Position
 
 @dataclass(frozen=True)
 class PlayerAction:
-    """A single player action, timestamped on the simulation clock."""
+    """A single player action, timestamped using the local wall clock."""
 
     player: PieceColor
     description: str
-    timestamp_milliseconds: int
+    occurred_at: datetime
 
 
 class PlayerActivityService:
     """Owns player-visible action history and capture scores."""
-
-    MAX_PLAYER_ACTIONS = 8
 
     _PIECE_POINTS = {
         PieceType.PAWN: 1,
@@ -29,7 +29,8 @@ class PlayerActivityService:
         PieceType.KING: 0,
     }
 
-    def __init__(self) -> None:
+    def __init__(self, clock: Callable[[], datetime] = datetime.now) -> None:
+        self._clock = clock
         self._actions = {
             PieceColor.WHITE: [],
             PieceColor.BLACK: [],
@@ -45,7 +46,6 @@ class PlayerActivityService:
         piece_type: PieceType,
         source: Position,
         target: Position,
-        timestamp_milliseconds: int,
     ) -> None:
         """Records a successfully scheduled move."""
 
@@ -56,7 +56,6 @@ class PlayerActivityService:
                 f"{self._format_position(source)} -> "
                 f"{self._format_position(target)}"
             ),
-            timestamp_milliseconds=timestamp_milliseconds,
         )
 
     def record_jump(
@@ -64,7 +63,6 @@ class PlayerActivityService:
         player: PieceColor,
         piece_type: PieceType,
         position: Position,
-        timestamp_milliseconds: int,
     ) -> None:
         """Records a jump started by a player."""
 
@@ -74,7 +72,6 @@ class PlayerActivityService:
                 f"{piece_type.name.title()} jumps at "
                 f"{self._format_position(position)}"
             ),
-            timestamp_milliseconds=timestamp_milliseconds,
         )
 
     def record_capture(
@@ -106,19 +103,15 @@ class PlayerActivityService:
         self,
         player: PieceColor,
         description: str,
-        timestamp_milliseconds: int,
     ) -> None:
         history = self._actions[player]
         history.append(
             PlayerAction(
                 player=player,
                 description=description,
-                timestamp_milliseconds=timestamp_milliseconds,
+                occurred_at=self._clock(),
             )
         )
-        # Keep the history bounded to the maximum number of actions.
-        if len(history) > self.MAX_PLAYER_ACTIONS:
-            history.pop(0)
 
     @staticmethod
     def _format_position(position: Position) -> str:
