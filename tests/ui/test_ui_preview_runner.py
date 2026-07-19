@@ -3,7 +3,7 @@
 from pathlib import Path
 import unittest
 
-import run_ui_preview
+from tools.ui import preview_runner
 
 
 class TestUIPreviewRunner(unittest.TestCase):
@@ -13,7 +13,7 @@ class TestUIPreviewRunner(unittest.TestCase):
         if output_path.exists():
             output_path.unlink()
 
-        generated = run_ui_preview.main(
+        generated = preview_runner.main(
             show_window=False,
             output_path=output_path,
         )

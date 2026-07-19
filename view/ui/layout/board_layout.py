@@ -1,3 +1,4 @@
+from config.constants import BOARD_SIZE
 from model.position import Position
 
 
@@ -45,10 +46,10 @@ class BoardLayout:
         self.board_x = (window_width - self.board_size) // 2
         self.board_y = (window_height - self.board_size) // 2
 
-        # Board.jpg has a decorative wooden frame.  The playable 8x8 area is
+        # Board.jpg has a decorative wooden frame. The playable board area is
         # the centered 80% of that image, so pieces must use this inner area.
         self.inner_board_size = int(self.board_size * board_inner_ratio)
-        self.square_size = self.inner_board_size // 8
+        self.square_size = self.inner_board_size // BOARD_SIZE
         self.cells_x = self.board_x + (self.board_size - self.inner_board_size) // 2
         self.cells_y = self.board_y + (self.board_size - self.inner_board_size) // 2
 

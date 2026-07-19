@@ -116,6 +116,7 @@ class PlayerActivityService:
                 timestamp_milliseconds=timestamp_milliseconds,
             )
         )
+        # Keep the history bounded to the maximum number of actions.
         if len(history) > self.MAX_PLAYER_ACTIONS:
             history.pop(0)
 

@@ -4,6 +4,7 @@ Tests for RuleEngine validation logic.
 
 import unittest
 
+from config.constants import BOARD_SIZE
 from model.board import Board
 from model.piece import Piece, PieceColor, PieceType, PieceState
 from model.position import Position
@@ -17,8 +18,11 @@ class TestRuleEngineValidation(unittest.TestCase):
     def setUp(self):
         """Set up a fresh board and engine for each test."""
         self.engine = RuleEngine()
-        # Create 8x8 board with None in each cell
-        self.board = Board([[None for _ in range(8)] for _ in range(8)])
+        # Create a standard board with None in each cell
+        self.board = Board([
+            [None for _ in range(BOARD_SIZE)]
+            for _ in range(BOARD_SIZE)
+        ])
 
     def test_move_outside_board_source(self):
         """Test that moves from outside the board are rejected."""

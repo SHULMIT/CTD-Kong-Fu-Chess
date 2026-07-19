@@ -102,3 +102,7 @@ pnpm-debug.log*
 .tmp_test29_input.txt
 *.tmp
 *.temp
+
+# Local agent guidance and architecture notes
+AGENTS.md
+docs/ARCHITECTURE.md

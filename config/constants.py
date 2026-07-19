@@ -12,6 +12,7 @@ JUMP_DURATION_MILLISECONDS = 600
 MILLISECONDS_PER_SECOND = 1000
 JUMP_HEIGHT_RATIO = 0.35
 CELL_SIZE = 100
+BOARD_SIZE = 8
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_BOARD_PATH = PROJECT_ROOT / "view" / "ui" / "assets" / "default_board.txt"

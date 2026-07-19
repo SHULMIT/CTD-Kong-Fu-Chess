@@ -30,7 +30,7 @@ class TestWhitePawnForwardMove(unittest.TestCase):
         self.assertIn(Position(0, 1), moves)
 
     def test_double_step_from_start_row(self):
-        # white starts at row height-2 (row 6 on a standard 8-row board)
+        # White starts at row height - 2 (row 6 on a standard board).
         board = _board(
             ". . .\n"  # row 0
             ". . .\n"  # row 1

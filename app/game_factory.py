@@ -20,7 +20,7 @@ from realtime.real_time_arbiter import RealTimeArbiter
 
 from rules.rule_engine import RuleEngine
 
-from view.ui.scene.game_scene import GameScene
+from view.ui.scene.game_scene_factory import GameSceneFactory
 
 
 class GameFactory:
@@ -55,7 +55,7 @@ class GameFactory:
             game_engine=game_engine,
         )
 
-        scene = GameScene(
+        scene = GameSceneFactory.create(
             controller=controller,
             game_engine=game_engine,
         )

@@ -12,12 +12,12 @@ from game.game_engine import GameEngine
 from realtime.duration_calculator import DurationCalculator
 from realtime.real_time_arbiter import RealTimeArbiter
 from rules.rule_engine import RuleEngine
-from run_ui_game_demo import FRAMES_PER_MOVE, _game_moves, render_game_demo
+from tools.ui.game_demo_renderer import FRAMES_PER_MOVE, _game_moves, render_game_demo
 from view.ui.animation.animation_repository import AnimationRepository
 from view.ui.animation.animation_state import AnimationState
 from view.ui.animation.piece_code_resolver import PieceCodeResolver
 from view.ui.graphics.img import Img
-from view.ui.scene.game_scene import GameScene
+from view.ui.scene.game_scene_factory import GameSceneFactory
 
 
 def _create_scene(board):
@@ -28,7 +28,7 @@ def _create_scene(board):
         duration_calculator=DurationCalculator(),
     )
     controller = Controller(game_engine)
-    return GameScene(controller=controller, game_engine=game_engine)
+    return GameSceneFactory.create(controller=controller, game_engine=game_engine)
 
 
 def test_piece_animation_is_resolved_loaded_and_cached():

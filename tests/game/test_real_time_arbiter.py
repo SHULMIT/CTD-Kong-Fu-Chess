@@ -4,7 +4,7 @@ Tests for realtime.real_time_arbiter.
 
 import unittest
 
-from config.constants import EMPTY_SQUARE, JUMP_DURATION_MILLISECONDS
+from config.constants import BOARD_SIZE, EMPTY_SQUARE, JUMP_DURATION_MILLISECONDS
 from model.board import Board
 from model.piece import Piece, PieceColor, PieceState, PieceType
 from model.position import Position
@@ -194,8 +194,8 @@ class TestRealTimeArbiter(unittest.TestCase):
         queen = self._make_piece(2, PieceType.QUEEN, 4, 0, PieceColor.WHITE)
 
         board_rows = [
-            [EMPTY_SQUARE for _ in range(8)]
-            for _ in range(8)
+            [EMPTY_SQUARE for _ in range(BOARD_SIZE)]
+            for _ in range(BOARD_SIZE)
         ]
         board_rows[7][4] = rook
         board_rows[4][0] = queen
