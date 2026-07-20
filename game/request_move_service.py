@@ -14,6 +14,8 @@ It does not manage the game state or implement chess rules.
 
 from game.move_result import MoveResult
 from game.player_activity_service import PlayerActivityService
+from events.event_bus import EventBus
+from events.game_events import MoveAcceptedEvent, MoveStartedEvent
 from model.board import Board
 from model.position import Position
 from realtime.duration_calculator import DurationCalculator
@@ -35,12 +37,14 @@ class RequestMoveService:
         arbiter: RealTimeArbiter,
         duration_calculator: DurationCalculator,
         player_activity: PlayerActivityService | None = None,
+        event_bus: EventBus | None = None,
     ):
         self._board = board
         self._rule_engine = rule_engine
         self._arbiter = arbiter
         self._duration_calculator = duration_calculator
         self._player_activity = player_activity
+        self._event_bus = event_bus
 
     def get_legal_moves(
         self,
@@ -80,6 +84,15 @@ class RequestMoveService:
             target,
         )
 
+        if self._event_bus is not None:
+            self._event_bus.publish(
+                MoveStartedEvent(
+                    piece_id=piece.id,
+                    source=source,
+                    target=target,
+                )
+            )
+
         self._arbiter.start_motion(
             piece=piece,
             source=source,
@@ -93,6 +106,11 @@ class RequestMoveService:
                 piece_type=piece.type,
                 source=source,
                 target=target,
+            )
+
+        if self._event_bus is not None:
+            self._event_bus.publish(
+                MoveAcceptedEvent(source=source, target=target)
             )
 
         return MoveResult.accepted()

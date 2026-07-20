@@ -146,3 +146,65 @@ class OverlayRenderer:
             thickness,
             cv2.LINE_AA,
         )
+
+    def draw_match_started(self, message: str) -> None:
+        """Draw a temporary centered dialog with both player profiles."""
+        image = self._canvas.canvas.img
+        height, width = image.shape[:2]
+        panel_width = min(760, width - 80)
+        panel_height = 300
+        left = (width - panel_width) // 2
+        top = (height - panel_height) // 2
+        overlay = image.copy()
+        cv2.rectangle(
+            overlay,
+            (left, top),
+            (left + panel_width, top + panel_height),
+            (20, 20, 20),
+            -1,
+        )
+        cv2.addWeighted(overlay, 0.92, image, 0.08, 0, image)
+        lines = ["MATCH STARTED", *message.splitlines()]
+        for index, line in enumerate(lines):
+            scale = 1.55 if index == 0 else 1.15
+            thickness = 3 if index == 0 else 2
+            (text_width, _), _ = cv2.getTextSize(
+                line,
+                cv2.FONT_HERSHEY_DUPLEX,
+                scale,
+                thickness,
+            )
+            cv2.putText(
+                image,
+                line,
+                ((width - text_width) // 2, top + 75 + index * 75),
+                cv2.FONT_HERSHEY_DUPLEX,
+                scale,
+                (255, 255, 255),
+                thickness,
+                cv2.LINE_AA,
+            )
+
+    def draw_disconnect_status(self, message: str) -> None:
+        """Draw the temporary reconnect/forfeit status over the board."""
+        image = self._canvas.canvas.img
+        height, width = image.shape[:2]
+        overlay = image.copy()
+        cv2.rectangle(overlay, (0, 0), (width, height), (15, 15, 15), -1)
+        cv2.addWeighted(overlay, 0.65, image, 0.35, 0, image)
+        lines = message.splitlines()
+        for index, line in enumerate(lines):
+            scale = 1.1 if index == 0 else 0.85
+            (text_width, _), _ = cv2.getTextSize(
+                line, cv2.FONT_HERSHEY_DUPLEX, scale, 2
+            )
+            cv2.putText(
+                image,
+                line,
+                ((width - text_width) // 2, height // 2 - 35 + index * 45),
+                cv2.FONT_HERSHEY_DUPLEX,
+                scale,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )

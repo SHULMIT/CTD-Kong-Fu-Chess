@@ -76,6 +76,8 @@ class PlayerActivityRenderer:
         text_x = x + padding
         text_y = y + 70
         score = self._player_activity.get_score(player)
+        profile_getter = getattr(self._player_activity, "get_profile", None)
+        profile = profile_getter(player) if profile_getter is not None else None
         header_color = (230, 230, 230)
 
         cv2.putText(
@@ -88,10 +90,29 @@ class PlayerActivityRenderer:
             3,
             cv2.LINE_AA,
         )
+        score_offset = 80
+        actions_offset = 190
+        if profile is not None:
+            username, rating, is_local = profile
+            profile_text = f"{username} ({rating})"
+            if is_local:
+                profile_text = f"{profile_text} - YOU"
+            cv2.putText(
+                image,
+                profile_text,
+                (text_x, text_y + 65),
+                font,
+                1.25,
+                (245, 245, 245),
+                2,
+                cv2.LINE_AA,
+            )
+            score_offset = 125
+            actions_offset = 235
         cv2.putText(
             image,
             f"Score: {score}",
-            (text_x, text_y + 80),
+            (text_x, text_y + score_offset),
             font,
             body_scale,
             (0, 215, 255),
@@ -101,7 +122,7 @@ class PlayerActivityRenderer:
 
         actions = self._player_activity.get_actions(player)[-self.MAX_VISIBLE_ACTIONS:]
         for index, action in enumerate(actions):
-            line_y = text_y + 190 + index * 120
+            line_y = text_y + actions_offset + index * 120
             self._draw_action(
                 action=action,
                 x=text_x,

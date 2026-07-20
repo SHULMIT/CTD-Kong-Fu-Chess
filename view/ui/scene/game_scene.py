@@ -4,6 +4,9 @@ from controller.controller import Controller
 from game.game_engine import GameEngine
 from model.position import Position
 from view.ui.feedback.status_message_controller import StatusMessageController
+from view.ui.feedback.match_started_dialog_controller import (
+    MatchStartedDialogController,
+)
 from view.ui.input.ui_input_handler import UiInputHandler
 from view.ui.layout.board_layout import BoardLayout
 from view.ui.render.board_renderer import BoardRenderer
@@ -27,6 +30,7 @@ class GameScene:
         player_activity_renderer: PlayerActivityRenderer,
         overlay_renderer: OverlayRenderer,
         status_message_controller: StatusMessageController,
+        match_started_dialog_controller: MatchStartedDialogController | None = None,
     ) -> None:
         self._controller = controller
         self._game_engine = game_engine
@@ -38,6 +42,7 @@ class GameScene:
         self._player_activity_renderer = player_activity_renderer
         self._overlay_renderer = overlay_renderer
         self._status_message_controller = status_message_controller
+        self._match_started_dialog_controller = match_started_dialog_controller
 
     @property
     def canvas(self) -> GameCanvas:
@@ -52,6 +57,11 @@ class GameScene:
         """Return whether the game has ended."""
         return self._game_engine.game_over
 
+    @property
+    def should_close(self) -> bool:
+        provider = getattr(type(self._game_engine), "should_close_spectator_view", None)
+        return bool(provider(self._game_engine)) if provider is not None else False
+
     def bind_input(self) -> None:
         """Register this scene's mouse handler after the window exists."""
         self._canvas.set_mouse_callback(self._input_handler.handle_mouse)
@@ -62,6 +72,15 @@ class GameScene:
         milliseconds = round(delta_time * 1000)
         if milliseconds > 0:
             self._game_engine.wait(milliseconds)
+        consume_message = getattr(
+            self._game_engine,
+            "consume_match_started_message",
+            None,
+        )
+        if consume_message is not None and self._match_started_dialog_controller:
+            message = consume_message()
+            if message is not None:
+                self._match_started_dialog_controller.show(message)
 
     def draw(self, selected_position: Position | None = None) -> None:
         """Draw the current game frame in scene-layer order."""
@@ -74,6 +93,18 @@ class GameScene:
         self._player_activity_renderer.draw()
         self._status_message_controller.draw()
         self._draw_overlays(selected_position)
+        if self._match_started_dialog_controller is not None:
+            self._match_started_dialog_controller.draw()
+        disconnect_provider = getattr(
+            type(self._game_engine), "disconnect_overlay_message", None
+        )
+        disconnect_message = (
+            disconnect_provider(self._game_engine)
+            if disconnect_provider is not None
+            else None
+        )
+        if disconnect_message:
+            self._overlay_renderer.draw_disconnect_status(disconnect_message)
 
     def _draw_overlays(self, selected_position: Position | None) -> None:
         if self._game_engine.game_over:

@@ -3,9 +3,15 @@ Manages piece movement over time.
 """
 
 from config.constants import JUMP_DURATION_MILLISECONDS
+from events.event_bus import EventBus
+from events.game_events import (
+    JumpCompletedEvent,
+    MoveCompletedEvent,
+    ScoreChangedEvent,
+)
 from game.player_activity_service import PlayerActivityService
 from model.board import Board
-from model.piece import Piece, PieceState
+from model.piece import Piece, PieceColor, PieceState
 from model.position import Position
 from realtime.airborne_manager import AirborneManager
 from realtime.collision_resolver import CollisionResolver
@@ -27,6 +33,8 @@ class RealTimeArbiter:
         player_activity: PlayerActivityService | None = None,
     ):
         self._board = board
+        self._event_bus: EventBus | None = None
+        self._player_activity = player_activity
         self._motion_manager = MotionManager()
         self._airborne_manager = AirborneManager(
             jump_duration_milliseconds=JUMP_DURATION_MILLISECONDS,
@@ -139,6 +147,7 @@ class RealTimeArbiter:
 
             for piece in landed_pieces:
                 self._lifecycle.land_piece(piece)
+                self._publish_jump_completed(piece)
 
             self._cleanup_finished_motions()
 
@@ -158,7 +167,12 @@ class RealTimeArbiter:
             if not motion.is_ready_for_next_step():
                 continue
 
+            score_before = self._get_score(motion.piece.color)
             self._collision_resolver.resolve_step(motion)
+            self._publish_score_change(
+                player=motion.piece.color,
+                previous_score=score_before,
+            )
 
     def _cleanup_finished_motions(self) -> None:
         """
@@ -168,6 +182,8 @@ class RealTimeArbiter:
         for motion in list(self._motion_manager.get_all()):
             if motion.is_finished():
                 self._motion_manager.remove(motion)
+                if motion.current_position == motion.target:
+                    self._publish_move_completed(motion)
 
     def jump(
         self,
@@ -189,8 +205,55 @@ class RealTimeArbiter:
     ) -> None:
         """Connects the game activity service to capture resolution."""
         self._collision_resolver.set_player_activity(player_activity)
+        self._player_activity = player_activity
+
+    def set_event_bus(self, event_bus: EventBus) -> None:
+        """Connects this simulation to its owning game's event bus."""
+        self._event_bus = event_bus
 
     @property
     def current_time(self) -> int:
         """Returns the current simulation time in milliseconds."""
         return self._timeline.current_time
+
+    def _get_score(self, player: PieceColor) -> int | None:
+        if self._player_activity is None:
+            return None
+        return self._player_activity.get_score(player)
+
+    def _publish_score_change(
+        self,
+        player: PieceColor,
+        previous_score: int | None,
+    ) -> None:
+        if self._event_bus is None or self._player_activity is None:
+            return
+
+        score = self._player_activity.get_score(player)
+        if previous_score == score:
+            return
+
+        self._event_bus.publish(
+            ScoreChangedEvent(player=player, score=score)
+        )
+
+    def _publish_move_completed(self, motion: Motion) -> None:
+        if self._event_bus is None:
+            return
+        self._event_bus.publish(
+            MoveCompletedEvent(
+                piece_id=motion.piece.id,
+                source=motion.source,
+                target=motion.target,
+            )
+        )
+
+    def _publish_jump_completed(self, piece: Piece) -> None:
+        if self._event_bus is None:
+            return
+        self._event_bus.publish(
+            JumpCompletedEvent(
+                piece_id=piece.id,
+                position=piece.position,
+            )
+        )

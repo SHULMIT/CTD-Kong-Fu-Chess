@@ -1,6 +1,7 @@
 """Composition root for creating independent game-domain engines."""
 
 from board_io.board_loader import BoardLoader
+from events.event_bus import EventBus
 from config.constants import DEFAULT_BOARD_PATH
 from game.game_engine import GameEngine
 from game.player_activity_service import PlayerActivityService
@@ -18,6 +19,7 @@ class GameEngineFactory:
 
         board = BoardLoader.load(DEFAULT_BOARD_PATH)
         player_activity = PlayerActivityService()
+        event_bus = EventBus()
         arbiter = RealTimeArbiter(
             board,
             player_activity=player_activity,
@@ -29,4 +31,5 @@ class GameEngineFactory:
             arbiter=arbiter,
             duration_calculator=DurationCalculator(),
             player_activity=player_activity,
+            event_bus=event_bus,
         )

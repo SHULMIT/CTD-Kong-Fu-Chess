@@ -13,6 +13,12 @@ It acts as the central facade of the game layer.
 """
 
 from game.move_reason import MoveReason
+from events.event_bus import EventBus
+from events.game_events import (
+	GameOverEvent,
+	GameStartedEvent,
+	JumpStartedEvent,
+)
 from game.move_result import MoveResult
 from game.player_activity_service import PlayerActivityService
 from game.game_query_service import GameQueryService
@@ -38,9 +44,12 @@ class GameEngine:
 		arbiter: RealTimeArbiter,
 		duration_calculator: DurationCalculator,
 		player_activity: PlayerActivityService | None = None,
+		event_bus: EventBus | None = None,
 	):
+		self._event_bus = event_bus or EventBus()
 		self._player_activity = player_activity or PlayerActivityService()
 		arbiter.set_player_activity(self._player_activity)
+		arbiter.set_event_bus(self._event_bus)
 		self._query_service = GameQueryService(board)
 		self._state_service = GameStateService(arbiter)
 		self._request_move_service = RequestMoveService(
@@ -49,7 +58,9 @@ class GameEngine:
 			arbiter=arbiter,
 			duration_calculator=duration_calculator,
 			player_activity=self._player_activity,
+			event_bus=self._event_bus,
 		)
+		self._event_bus.publish(GameStartedEvent())
 
 	@property
 	def board(self) -> Board:
@@ -63,6 +74,11 @@ class GameEngine:
 	def player_activity(self) -> PlayerActivityService:
 		"""Returns the action and score data for the current game."""
 		return self._player_activity
+
+	@property
+	def event_bus(self) -> EventBus:
+		"""Returns the message bus owned by this game instance."""
+		return self._event_bus
 
 	def request_move(
 		self,
@@ -87,7 +103,12 @@ class GameEngine:
 		self,
 		milliseconds: int,
 	) -> None:
+		was_game_over = self.game_over
 		self._state_service.wait(milliseconds)
+		if not was_game_over and self.game_over:
+			self._event_bus.publish(
+				GameOverEvent(winner=self.get_winner())
+			)
 
 	def jump(
 		self,
@@ -103,6 +124,12 @@ class GameEngine:
 			raise JumpEmptySourceError()
 
 		self._state_service.jump_piece(piece)
+		self._event_bus.publish(
+			JumpStartedEvent(
+				piece_id=piece.id,
+				position=position,
+			)
+		)
 		self._player_activity.record_jump(
 			player=piece.color,
 			piece_type=piece.type,

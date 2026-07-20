@@ -6,6 +6,9 @@ from view.ui.animation.animation_repository import AnimationRepository
 from view.ui.constants.image_keys import ImageKeys
 from view.ui.constants.ui_paths import BACKGROUND_PATH, BOARD_PATH
 from view.ui.feedback.status_message_controller import StatusMessageController
+from view.ui.feedback.match_started_dialog_controller import (
+    MatchStartedDialogController,
+)
 from view.ui.graphics.image_manager import ImageManager
 from view.ui.input.coordinate_scaler import CoordinateScaler
 from view.ui.input.ui_input_handler import UiInputHandler
@@ -56,6 +59,9 @@ class GameSceneFactory:
             player_activity=game_engine.player_activity,
         )
         status_message_controller = StatusMessageController(overlay_renderer)
+        match_started_dialog_controller = MatchStartedDialogController(
+            overlay_renderer
+        )
         input_handler = UiInputHandler(
             layout=layout,
             controller=controller,
@@ -74,4 +80,5 @@ class GameSceneFactory:
             player_activity_renderer=player_activity_renderer,
             overlay_renderer=overlay_renderer,
             status_message_controller=status_message_controller,
+            match_started_dialog_controller=match_started_dialog_controller,
         )
