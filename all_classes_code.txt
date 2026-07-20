@@ -1,16 +1,17 @@
 PROJECT - FULL PYTHON SOURCE CODE
 ======================================================================
-Files included: 78
+Files included: 120
 Tests, caches, virtual environments, and generated files are excluded.
 
 CONTENTS
 ----------------------------------------------------------------------
 main.py (1 files)
   - main.py
-app (3 files)
+app (4 files)
   - app/desktop_application_factory.py
   - app/game_application.py
   - app/game_engine_factory.py
+  - app/multiplayer_desktop_application_factory.py
 controller (1 files)
   - controller/controller.py
 game (8 files)
@@ -62,8 +63,11 @@ errors (2 files)
   - errors/user_input_errors.py
 config (1 files)
   - config/constants.py
-view (28 files)
+view (32 files)
   - view/__init__.py
+  - view/auth/__init__.py
+  - view/auth/login_window.py
+  - view/auth/multiplayer_menu_window.py
   - view/ui/animation/animation_repository.py
   - view/ui/animation/animation_state.py
   - view/ui/animation/animation_state_resolver.py
@@ -75,6 +79,7 @@ view (28 files)
   - view/ui/constants/image_keys.py
   - view/ui/constants/ui_paths.py
   - view/ui/feedback/__init__.py
+  - view/ui/feedback/match_started_dialog_controller.py
   - view/ui/feedback/status_message_controller.py
   - view/ui/graphics/image_manager.py
   - view/ui/graphics/img.py
@@ -91,11 +96,55 @@ view (28 files)
   - view/ui/scene/game_scene.py
   - view/ui/scene/game_scene_factory.py
   - view/ui/window/game_canvas.py
-tools (1 files)
+tools (2 files)
   - tools/class_code_exporter.py
+  - tools/run_multiplayer.py
+authentication (7 files)
+  - authentication/__init__.py
+  - authentication/authentication_service.py
+  - authentication/errors.py
+  - authentication/password_hasher.py
+  - authentication/sqlite_user_repository.py
+  - authentication/user.py
+  - authentication/user_repository.py
 common (2 files)
   - common/__init__.py
   - common/time.py
+events (5 files)
+  - events/__init__.py
+  - events/event.py
+  - events/event_bus.py
+  - events/game_events.py
+  - events/subscription.py
+matchmaking (2 files)
+  - matchmaking/__init__.py
+  - matchmaking/matchmaking_service.py
+network (15 files)
+  - network/__init__.py
+  - network/client_main.py
+  - network/command_parser.py
+  - network/commands.py
+  - network/errors.py
+  - network/game_event_serializer.py
+  - network/game_server.py
+  - network/game_snapshot_serializer.py
+  - network/multiplayer_controller.py
+  - network/network_client.py
+  - network/reconnect_session_service.py
+  - network/remote_game_state.py
+  - network/server_logging.py
+  - network/server_main.py
+  - network/session_manager.py
+rating (3 files)
+  - rating/__init__.py
+  - rating/elo_rating_service.py
+  - rating/persistent_rating_service.py
+rooms (2 files)
+  - rooms/__init__.py
+  - rooms/private_room_service.py
+spectators (2 files)
+  - spectators/__init__.py
+  - spectators/spectator_service.py
 
 ######################################################################
 SECTION: main.py
@@ -156,6 +205,7 @@ FILE: app/game_application.py
 ======================================================================
 from view.ui.scene.game_scene import GameScene
 from view.ui.loop.game_loop import GameLoop
+from collections.abc import Callable
 
 
 class GameApplication:
@@ -163,10 +213,12 @@ class GameApplication:
     def __init__(
         self,
         scene: GameScene,
+        on_close: Callable[[], None] | None = None,
     ):
 
         self._scene = scene
         self._running = True
+        self._on_close = on_close or (lambda: None)
 
     def run(self) -> None:
         """Runs the interactive UI until the player closes it."""
@@ -178,15 +230,18 @@ class GameApplication:
             render=self._render,
             is_running=lambda: self._running,
         )
-        loop.run()
-
-        self._scene.canvas.close()
+        try:
+            loop.run()
+        finally:
+            self._scene.canvas.close()
+            self._on_close()
 
     def _update(self, _delta_time: float) -> None:
         key = self._scene.canvas.poll_events()
         self._running = (
             key != 27
             and self._scene.canvas.is_open()
+            and not self._scene.should_close
         )
         # After game over, stop advancing the simulation —
         # just keep the GAME OVER screen visible.
@@ -204,6 +259,7 @@ FILE: app/game_engine_factory.py
 """Composition root for creating independent game-domain engines."""
 
 from board_io.board_loader import BoardLoader
+from events.event_bus import EventBus
 from config.constants import DEFAULT_BOARD_PATH
 from game.game_engine import GameEngine
 from game.player_activity_service import PlayerActivityService
@@ -221,6 +277,7 @@ class GameEngineFactory:
 
         board = BoardLoader.load(DEFAULT_BOARD_PATH)
         player_activity = PlayerActivityService()
+        event_bus = EventBus()
         arbiter = RealTimeArbiter(
             board,
             player_activity=player_activity,
@@ -232,6 +289,50 @@ class GameEngineFactory:
             arbiter=arbiter,
             duration_calculator=DurationCalculator(),
             player_activity=player_activity,
+            event_bus=event_bus,
+        )
+
+======================================================================
+FILE: app/multiplayer_desktop_application_factory.py
+======================================================================
+"""Composition root for the remote multiplayer desktop client."""
+
+from app.game_application import GameApplication
+from network.multiplayer_controller import MultiplayerController
+from network.network_client import NetworkClient
+from network.remote_game_state import RemoteGameState
+from view.ui.scene.game_scene_factory import GameSceneFactory
+
+
+class MultiplayerDesktopApplicationFactory:
+    """Builds the existing desktop UI around server-authoritative state."""
+
+    @staticmethod
+    def create(network_client: NetworkClient) -> GameApplication:
+        """Build the game UI around an already authenticated connection."""
+        game_state = RemoteGameState(network_client)
+        if network_client.match_found is not None:
+            game_state.apply_message(network_client.match_found)
+        if network_client.initial_snapshot is not None:
+            game_state.apply_message(
+                {"type": "game_snapshot", "state": network_client.initial_snapshot}
+            )
+        if network_client.player_profiles is not None:
+            game_state.apply_message(network_client.player_profiles)
+        game_state.wait(0)
+        game_state.set_local_profile(
+            color=network_client.assigned_color,
+            username=network_client.username,
+            rating=network_client.rating,
+        )
+        controller = MultiplayerController(game_state, network_client)
+        scene = GameSceneFactory.create(
+            controller=controller,
+            game_engine=game_state,
+        )
+        return GameApplication(
+            scene=scene,
+            on_close=network_client.disconnect,
         )
 
 ######################################################################
@@ -367,6 +468,12 @@ It acts as the central facade of the game layer.
 """
 
 from game.move_reason import MoveReason
+from events.event_bus import EventBus
+from events.game_events import (
+	GameOverEvent,
+	GameStartedEvent,
+	JumpStartedEvent,
+)
 from game.move_result import MoveResult
 from game.player_activity_service import PlayerActivityService
 from game.game_query_service import GameQueryService
@@ -392,9 +499,12 @@ class GameEngine:
 		arbiter: RealTimeArbiter,
 		duration_calculator: DurationCalculator,
 		player_activity: PlayerActivityService | None = None,
+		event_bus: EventBus | None = None,
 	):
+		self._event_bus = event_bus or EventBus()
 		self._player_activity = player_activity or PlayerActivityService()
 		arbiter.set_player_activity(self._player_activity)
+		arbiter.set_event_bus(self._event_bus)
 		self._query_service = GameQueryService(board)
 		self._state_service = GameStateService(arbiter)
 		self._request_move_service = RequestMoveService(
@@ -403,7 +513,9 @@ class GameEngine:
 			arbiter=arbiter,
 			duration_calculator=duration_calculator,
 			player_activity=self._player_activity,
+			event_bus=self._event_bus,
 		)
+		self._event_bus.publish(GameStartedEvent())
 
 	@property
 	def board(self) -> Board:
@@ -417,6 +529,11 @@ class GameEngine:
 	def player_activity(self) -> PlayerActivityService:
 		"""Returns the action and score data for the current game."""
 		return self._player_activity
+
+	@property
+	def event_bus(self) -> EventBus:
+		"""Returns the message bus owned by this game instance."""
+		return self._event_bus
 
 	def request_move(
 		self,
@@ -441,7 +558,12 @@ class GameEngine:
 		self,
 		milliseconds: int,
 	) -> None:
+		was_game_over = self.game_over
 		self._state_service.wait(milliseconds)
+		if not was_game_over and self.game_over:
+			self._event_bus.publish(
+				GameOverEvent(winner=self.get_winner())
+			)
 
 	def jump(
 		self,
@@ -457,6 +579,12 @@ class GameEngine:
 			raise JumpEmptySourceError()
 
 		self._state_service.jump_piece(piece)
+		self._event_bus.publish(
+			JumpStartedEvent(
+				piece_id=piece.id,
+				position=position,
+			)
+		)
 		self._player_activity.record_jump(
 			player=piece.color,
 			piece_type=piece.type,
@@ -874,6 +1002,8 @@ It does not manage the game state or implement chess rules.
 
 from game.move_result import MoveResult
 from game.player_activity_service import PlayerActivityService
+from events.event_bus import EventBus
+from events.game_events import MoveAcceptedEvent, MoveStartedEvent
 from model.board import Board
 from model.position import Position
 from realtime.duration_calculator import DurationCalculator
@@ -895,12 +1025,14 @@ class RequestMoveService:
         arbiter: RealTimeArbiter,
         duration_calculator: DurationCalculator,
         player_activity: PlayerActivityService | None = None,
+        event_bus: EventBus | None = None,
     ):
         self._board = board
         self._rule_engine = rule_engine
         self._arbiter = arbiter
         self._duration_calculator = duration_calculator
         self._player_activity = player_activity
+        self._event_bus = event_bus
 
     def get_legal_moves(
         self,
@@ -940,6 +1072,15 @@ class RequestMoveService:
             target,
         )
 
+        if self._event_bus is not None:
+            self._event_bus.publish(
+                MoveStartedEvent(
+                    piece_id=piece.id,
+                    source=source,
+                    target=target,
+                )
+            )
+
         self._arbiter.start_motion(
             piece=piece,
             source=source,
@@ -953,6 +1094,11 @@ class RequestMoveService:
                 piece_type=piece.type,
                 source=source,
                 target=target,
+            )
+
+        if self._event_bus is not None:
+            self._event_bus.publish(
+                MoveAcceptedEvent(source=source, target=target)
             )
 
         return MoveResult.accepted()
@@ -1689,9 +1835,15 @@ Manages piece movement over time.
 """
 
 from config.constants import JUMP_DURATION_MILLISECONDS
+from events.event_bus import EventBus
+from events.game_events import (
+    JumpCompletedEvent,
+    MoveCompletedEvent,
+    ScoreChangedEvent,
+)
 from game.player_activity_service import PlayerActivityService
 from model.board import Board
-from model.piece import Piece, PieceState
+from model.piece import Piece, PieceColor, PieceState
 from model.position import Position
 from realtime.airborne_manager import AirborneManager
 from realtime.collision_resolver import CollisionResolver
@@ -1713,6 +1865,8 @@ class RealTimeArbiter:
         player_activity: PlayerActivityService | None = None,
     ):
         self._board = board
+        self._event_bus: EventBus | None = None
+        self._player_activity = player_activity
         self._motion_manager = MotionManager()
         self._airborne_manager = AirborneManager(
             jump_duration_milliseconds=JUMP_DURATION_MILLISECONDS,
@@ -1825,6 +1979,7 @@ class RealTimeArbiter:
 
             for piece in landed_pieces:
                 self._lifecycle.land_piece(piece)
+                self._publish_jump_completed(piece)
 
             self._cleanup_finished_motions()
 
@@ -1844,7 +1999,12 @@ class RealTimeArbiter:
             if not motion.is_ready_for_next_step():
                 continue
 
+            score_before = self._get_score(motion.piece.color)
             self._collision_resolver.resolve_step(motion)
+            self._publish_score_change(
+                player=motion.piece.color,
+                previous_score=score_before,
+            )
 
     def _cleanup_finished_motions(self) -> None:
         """
@@ -1854,6 +2014,8 @@ class RealTimeArbiter:
         for motion in list(self._motion_manager.get_all()):
             if motion.is_finished():
                 self._motion_manager.remove(motion)
+                if motion.current_position == motion.target:
+                    self._publish_move_completed(motion)
 
     def jump(
         self,
@@ -1875,11 +2037,58 @@ class RealTimeArbiter:
     ) -> None:
         """Connects the game activity service to capture resolution."""
         self._collision_resolver.set_player_activity(player_activity)
+        self._player_activity = player_activity
+
+    def set_event_bus(self, event_bus: EventBus) -> None:
+        """Connects this simulation to its owning game's event bus."""
+        self._event_bus = event_bus
 
     @property
     def current_time(self) -> int:
         """Returns the current simulation time in milliseconds."""
         return self._timeline.current_time
+
+    def _get_score(self, player: PieceColor) -> int | None:
+        if self._player_activity is None:
+            return None
+        return self._player_activity.get_score(player)
+
+    def _publish_score_change(
+        self,
+        player: PieceColor,
+        previous_score: int | None,
+    ) -> None:
+        if self._event_bus is None or self._player_activity is None:
+            return
+
+        score = self._player_activity.get_score(player)
+        if previous_score == score:
+            return
+
+        self._event_bus.publish(
+            ScoreChangedEvent(player=player, score=score)
+        )
+
+    def _publish_move_completed(self, motion: Motion) -> None:
+        if self._event_bus is None:
+            return
+        self._event_bus.publish(
+            MoveCompletedEvent(
+                piece_id=motion.piece.id,
+                source=motion.source,
+                target=motion.target,
+            )
+        )
+
+    def _publish_jump_completed(self, piece: Piece) -> None:
+        if self._event_bus is None:
+            return
+        self._event_bus.publish(
+            JumpCompletedEvent(
+                piece_id=piece.id,
+                position=piece.position,
+            )
+        )
 
 ######################################################################
 SECTION: rules
@@ -3286,6 +3495,309 @@ FILE: view/__init__.py
 """View package for the Kong-Fu Chess project."""
 
 ======================================================================
+FILE: view/auth/__init__.py
+======================================================================
+"""Desktop authentication views."""
+from view.auth.multiplayer_menu_window import MultiplayerMenuWindow
+
+__all__ = ["MultiplayerMenuWindow"]
+
+======================================================================
+FILE: view/auth/login_window.py
+======================================================================
+"""Tk desktop login and registration window for multiplayer mode."""
+
+from collections.abc import Callable
+import threading
+import tkinter as tk
+from tkinter import ttk
+from typing import Any
+
+
+class LoginWindow:
+    """Collects credentials and displays safe structured auth responses."""
+
+    _MESSAGES = {
+        "registration_success": "Registration succeeded. You can now log in.",
+        "username_taken": "That username is already taken.",
+        "invalid_credentials": "Invalid username or password.",
+        "validation_error": (
+            "Username: 3-32 letters, numbers or _. Password: 8-128 characters."
+        ),
+        "server_error": "The server encountered an error. Please try again.",
+        "connection_rejected": "The current game already has two players.",
+    }
+
+    def __init__(
+        self,
+        register: Callable[[str, str], dict[str, Any]],
+        login: Callable[[str, str], dict[str, Any]],
+        on_login_success: Callable[[], None],
+    ) -> None:
+        self._register = register
+        self._login = login
+        self._on_login_success = on_login_success
+        self._root = tk.Tk()
+        self._root.title("Kung Fu Chess - Login")
+        self._root.resizable(False, False)
+        self._username = tk.StringVar()
+        self._password = tk.StringVar()
+        self._status = tk.StringVar(value="Log in or create an account.")
+        self._build_widgets()
+
+    def run(self) -> None:
+        """Run the login window until login succeeds or the user closes it."""
+        self._root.mainloop()
+
+    def _build_widgets(self) -> None:
+        frame = ttk.Frame(self._root, padding=24)
+        frame.grid()
+        ttk.Label(frame, text="Username").grid(row=0, column=0, sticky="w")
+        ttk.Entry(frame, textvariable=self._username, width=32).grid(
+            row=1, column=0, columnspan=2, pady=(4, 12)
+        )
+        ttk.Label(frame, text="Password").grid(row=2, column=0, sticky="w")
+        ttk.Entry(
+            frame,
+            textvariable=self._password,
+            show="*",
+            width=32,
+        ).grid(row=3, column=0, columnspan=2, pady=(4, 16))
+        self._login_button = ttk.Button(
+            frame,
+            text="Login",
+            command=lambda: self._submit("login"),
+        )
+        self._login_button.grid(row=4, column=0, padx=(0, 6), sticky="ew")
+        self._register_button = ttk.Button(
+            frame,
+            text="Register",
+            command=lambda: self._submit("register"),
+        )
+        self._register_button.grid(row=4, column=1, padx=(6, 0), sticky="ew")
+        ttk.Label(
+            frame,
+            textvariable=self._status,
+            wraplength=320,
+        ).grid(row=5, column=0, columnspan=2, pady=(16, 0))
+
+    def _submit(self, action: str) -> None:
+        username = self._username.get()
+        password = self._password.get()
+        self._set_buttons_enabled(False)
+        self._status.set("Contacting server...")
+        callback = self._login if action == "login" else self._register
+        threading.Thread(
+            target=self._perform_request,
+            args=(callback, username, password),
+            daemon=True,
+        ).start()
+
+    def _perform_request(
+        self,
+        callback: Callable[[str, str], dict[str, Any]],
+        username: str,
+        password: str,
+    ) -> None:
+        try:
+            response = callback(username, password)
+        except Exception:
+            response = {"type": "server_error"}
+        self._root.after(0, self._handle_response, response)
+
+    def _handle_response(self, response: dict[str, Any]) -> None:
+        response_type = str(response.get("type"))
+        self._password.set("")
+        if response_type == "login_success":
+            self._root.destroy()
+            self._on_login_success()
+            return
+        self._status.set(
+            self._MESSAGES.get(response_type, "Authentication failed.")
+        )
+        self._set_buttons_enabled(True)
+
+    def _set_buttons_enabled(self, enabled: bool) -> None:
+        state = "normal" if enabled else "disabled"
+        self._login_button.configure(state=state)
+        self._register_button.configure(state=state)
+
+======================================================================
+FILE: view/auth/multiplayer_menu_window.py
+======================================================================
+"""Desktop lobby shown between authentication and an authoritative match."""
+
+from collections.abc import Callable
+import tkinter as tk
+from tkinter import ttk
+from tkinter import simpledialog
+
+from network.network_client import MultiplayerClientState, NetworkClient
+
+
+class MultiplayerMenuWindow:
+    """Displays the profile and sends Play/Cancel user intent to the server."""
+
+    _POLL_INTERVAL_MS = 75
+
+    def __init__(
+        self,
+        network_client: NetworkClient,
+        on_match_found: Callable[[], None],
+    ) -> None:
+        self._client = network_client
+        self._on_match_found = on_match_found
+        self._root = tk.Tk()
+        self._root.title("Kung Fu Chess - Multiplayer")
+        self._root.resizable(False, False)
+        self._status = tk.StringVar(value="Ready to play")
+        self._profile = tk.StringVar()
+        self._build_widgets()
+        self._refresh_profile()
+        self._root.after(self._POLL_INTERVAL_MS, self._poll_server)
+
+    def run(self) -> None:
+        """Run the lobby until canceled, closed, or a match is found."""
+        self._root.mainloop()
+
+    def _build_widgets(self) -> None:
+        frame = ttk.Frame(self._root, padding=28)
+        frame.grid()
+        ttk.Label(frame, text="Kung Fu Chess", font=("Segoe UI", 18, "bold")).grid()
+        ttk.Label(frame, textvariable=self._profile).grid(pady=(12, 18))
+        ttk.Label(frame, textvariable=self._status).grid(pady=(0, 14))
+        self._play_button = ttk.Button(frame, text="Play", command=self._play)
+        self._play_button.grid(sticky="ew")
+        self._create_room_button = ttk.Button(
+            frame, text="Create Room", command=self._create_room
+        )
+        self._create_room_button.grid(pady=(8, 0), sticky="ew")
+        self._join_room_button = ttk.Button(
+            frame, text="Join Room", command=self._join_room
+        )
+        self._join_room_button.grid(pady=(8, 0), sticky="ew")
+        self._spectate_button = ttk.Button(
+            frame, text="Spectate Game", command=self._list_spectatable_games
+        )
+        self._spectate_button.grid(pady=(8, 0), sticky="ew")
+        self._cancel_button = ttk.Button(
+            frame,
+            text="Cancel",
+            command=self._cancel,
+            state="disabled",
+        )
+        self._cancel_button.grid(pady=(8, 0), sticky="ew")
+
+    def _play(self) -> None:
+        if self._client.matchmaking_state is not MultiplayerClientState.IDLE:
+            return
+        self._set_entry_buttons("disabled")
+        self._cancel_button.configure(state="normal")
+        self._status.set("Searching for opponent...")
+        self._client.start_matchmaking()
+
+    def _cancel(self) -> None:
+        if self._client.matchmaking_state is MultiplayerClientState.SEARCHING:
+            self._client.cancel_matchmaking()
+        elif self._client.matchmaking_state is MultiplayerClientState.ROOM_WAITING:
+            self._client.cancel_room()
+
+    def _create_room(self) -> None:
+        if self._client.matchmaking_state is not MultiplayerClientState.IDLE:
+            return
+        self._set_entry_buttons("disabled")
+        self._status.set("Creating private room...")
+        self._client.create_room()
+
+    def _join_room(self) -> None:
+        if self._client.matchmaking_state is not MultiplayerClientState.IDLE:
+            return
+        code = simpledialog.askstring("Join Room", "Room code:", parent=self._root)
+        if not code:
+            return
+        self._set_entry_buttons("disabled")
+        self._status.set("Joining private room...")
+        self._client.join_room(code)
+
+    def _list_spectatable_games(self) -> None:
+        if self._client.matchmaking_state is not MultiplayerClientState.IDLE:
+            return
+        self._status.set("Loading active games...")
+        self._client.list_spectatable_games()
+
+    def _poll_server(self) -> None:
+        for message in self._client.poll_messages():
+            message_type = message.get("type")
+            if message_type == "match_found":
+                self._root.destroy()
+                self._on_match_found()
+                return
+            if message_type == "spectating_started":
+                self._root.destroy()
+                self._on_match_found()
+                return
+            if message_type == "room_created":
+                code = message.get("room_code")
+                self._status.set(f"Room {code}\nWaiting for another player...")
+                self._cancel_button.configure(state="normal")
+            elif message_type == "room_joined":
+                self._status.set("Room joined. Starting match...")
+            elif message_type == "room_closed":
+                self._status.set("Private room closed")
+                self._set_entry_buttons("normal")
+                self._cancel_button.configure(state="disabled")
+            elif message_type == "room_error":
+                reason = str(message.get("reason", "invalid_state")).replace("_", " ")
+                self._status.set(f"Room error: {reason}")
+                self._set_entry_buttons("normal")
+                self._cancel_button.configure(state="disabled")
+            elif message_type == "spectatable_games":
+                self._choose_spectatable_game(message.get("games", []))
+            elif message_type == "spectator_error":
+                reason = str(message.get("reason", "invalid_state")).replace("_", " ")
+                self._status.set(f"Spectator error: {reason}")
+            elif message_type == "matchmaking_canceled":
+                self._status.set("Search canceled")
+                self._set_entry_buttons("normal")
+                self._cancel_button.configure(state="disabled")
+            elif message_type == "matchmaking_queued":
+                self._status.set("Searching for opponent...")
+                self._refresh_profile()
+            elif message_type in {"command_rejected", "server_error"}:
+                self._status.set("Unable to start matchmaking")
+                self._set_entry_buttons("normal")
+                self._cancel_button.configure(state="disabled")
+        self._root.after(self._POLL_INTERVAL_MS, self._poll_server)
+
+    def _set_entry_buttons(self, state: str) -> None:
+        self._play_button.configure(state=state)
+        self._create_room_button.configure(state=state)
+        self._join_room_button.configure(state=state)
+        self._spectate_button.configure(state=state)
+
+    def _choose_spectatable_game(self, games: object) -> None:
+        if not isinstance(games, list) or not games:
+            self._status.set("No active games are available")
+            return
+        lines = []
+        for game in games:
+            white = game["white"]
+            black = game["black"]
+            lines.append(
+                f'{game["game_id"]}: {white["username"]} vs {black["username"]}'
+            )
+        game_id = simpledialog.askstring(
+            "Spectate Game",
+            "Enter a game ID:\n\n" + "\n".join(lines),
+            parent=self._root,
+        )
+        if game_id:
+            self._client.spectate_game(game_id.strip())
+
+    def _refresh_profile(self) -> None:
+        self._profile.set(f"{self._client.username}\nRating: {self._client.rating}")
+
+======================================================================
 FILE: view/ui/animation/animation_repository.py
 ======================================================================
 from view.ui.animation.animation_state import AnimationState
@@ -3769,6 +4281,40 @@ DEFAULT_GAME_DEMO_OUTPUT_DIR = PREVIEW_ASSETS_DIR / "game_demo"
 FILE: view/ui/feedback/__init__.py
 ======================================================================
 """User-feedback components for the UI."""
+
+======================================================================
+FILE: view/ui/feedback/match_started_dialog_controller.py
+======================================================================
+"""Temporary match-started dialog state for the existing OpenCV UI."""
+
+import time
+
+from view.ui.render.overlay_renderer import OverlayRenderer
+
+
+class MatchStartedDialogController:
+    """Shows both player profiles for a short, non-blocking duration."""
+
+    DISPLAY_SECONDS = 4.0
+
+    def __init__(self, overlay_renderer: OverlayRenderer) -> None:
+        self._overlay_renderer = overlay_renderer
+        self._message: str | None = None
+        self._expires_at = 0.0
+
+    def show(self, message: str) -> None:
+        """Display a new match summary for the configured duration."""
+        self._message = message
+        self._expires_at = time.perf_counter() + self.DISPLAY_SECONDS
+
+    def draw(self) -> None:
+        """Draw the dialog until its expiration time."""
+        if self._message is None:
+            return
+        if time.perf_counter() >= self._expires_at:
+            self._message = None
+            return
+        self._overlay_renderer.draw_match_started(self._message)
 
 ======================================================================
 FILE: view/ui/feedback/status_message_controller.py
@@ -4610,6 +5156,68 @@ class OverlayRenderer:
             cv2.LINE_AA,
         )
 
+    def draw_match_started(self, message: str) -> None:
+        """Draw a temporary centered dialog with both player profiles."""
+        image = self._canvas.canvas.img
+        height, width = image.shape[:2]
+        panel_width = min(760, width - 80)
+        panel_height = 300
+        left = (width - panel_width) // 2
+        top = (height - panel_height) // 2
+        overlay = image.copy()
+        cv2.rectangle(
+            overlay,
+            (left, top),
+            (left + panel_width, top + panel_height),
+            (20, 20, 20),
+            -1,
+        )
+        cv2.addWeighted(overlay, 0.92, image, 0.08, 0, image)
+        lines = ["MATCH STARTED", *message.splitlines()]
+        for index, line in enumerate(lines):
+            scale = 1.55 if index == 0 else 1.15
+            thickness = 3 if index == 0 else 2
+            (text_width, _), _ = cv2.getTextSize(
+                line,
+                cv2.FONT_HERSHEY_DUPLEX,
+                scale,
+                thickness,
+            )
+            cv2.putText(
+                image,
+                line,
+                ((width - text_width) // 2, top + 75 + index * 75),
+                cv2.FONT_HERSHEY_DUPLEX,
+                scale,
+                (255, 255, 255),
+                thickness,
+                cv2.LINE_AA,
+            )
+
+    def draw_disconnect_status(self, message: str) -> None:
+        """Draw the temporary reconnect/forfeit status over the board."""
+        image = self._canvas.canvas.img
+        height, width = image.shape[:2]
+        overlay = image.copy()
+        cv2.rectangle(overlay, (0, 0), (width, height), (15, 15, 15), -1)
+        cv2.addWeighted(overlay, 0.65, image, 0.35, 0, image)
+        lines = message.splitlines()
+        for index, line in enumerate(lines):
+            scale = 1.1 if index == 0 else 0.85
+            (text_width, _), _ = cv2.getTextSize(
+                line, cv2.FONT_HERSHEY_DUPLEX, scale, 2
+            )
+            cv2.putText(
+                image,
+                line,
+                ((width - text_width) // 2, height // 2 - 35 + index * 45),
+                cv2.FONT_HERSHEY_DUPLEX,
+                scale,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
+
 ======================================================================
 FILE: view/ui/render/piece_layer_renderer.py
 ======================================================================
@@ -4748,6 +5356,8 @@ class PlayerActivityRenderer:
         text_x = x + padding
         text_y = y + 70
         score = self._player_activity.get_score(player)
+        profile_getter = getattr(self._player_activity, "get_profile", None)
+        profile = profile_getter(player) if profile_getter is not None else None
         header_color = (230, 230, 230)
 
         cv2.putText(
@@ -4760,10 +5370,29 @@ class PlayerActivityRenderer:
             3,
             cv2.LINE_AA,
         )
+        score_offset = 80
+        actions_offset = 190
+        if profile is not None:
+            username, rating, is_local = profile
+            profile_text = f"{username} ({rating})"
+            if is_local:
+                profile_text = f"{profile_text} - YOU"
+            cv2.putText(
+                image,
+                profile_text,
+                (text_x, text_y + 65),
+                font,
+                1.25,
+                (245, 245, 245),
+                2,
+                cv2.LINE_AA,
+            )
+            score_offset = 125
+            actions_offset = 235
         cv2.putText(
             image,
             f"Score: {score}",
-            (text_x, text_y + 80),
+            (text_x, text_y + score_offset),
             font,
             body_scale,
             (0, 215, 255),
@@ -4773,7 +5402,7 @@ class PlayerActivityRenderer:
 
         actions = self._player_activity.get_actions(player)[-self.MAX_VISIBLE_ACTIONS:]
         for index, action in enumerate(actions):
-            line_y = text_y + 190 + index * 120
+            line_y = text_y + actions_offset + index * 120
             self._draw_action(
                 action=action,
                 x=text_x,
@@ -4826,6 +5455,9 @@ from controller.controller import Controller
 from game.game_engine import GameEngine
 from model.position import Position
 from view.ui.feedback.status_message_controller import StatusMessageController
+from view.ui.feedback.match_started_dialog_controller import (
+    MatchStartedDialogController,
+)
 from view.ui.input.ui_input_handler import UiInputHandler
 from view.ui.layout.board_layout import BoardLayout
 from view.ui.render.board_renderer import BoardRenderer
@@ -4849,6 +5481,7 @@ class GameScene:
         player_activity_renderer: PlayerActivityRenderer,
         overlay_renderer: OverlayRenderer,
         status_message_controller: StatusMessageController,
+        match_started_dialog_controller: MatchStartedDialogController | None = None,
     ) -> None:
         self._controller = controller
         self._game_engine = game_engine
@@ -4860,6 +5493,7 @@ class GameScene:
         self._player_activity_renderer = player_activity_renderer
         self._overlay_renderer = overlay_renderer
         self._status_message_controller = status_message_controller
+        self._match_started_dialog_controller = match_started_dialog_controller
 
     @property
     def canvas(self) -> GameCanvas:
@@ -4874,6 +5508,11 @@ class GameScene:
         """Return whether the game has ended."""
         return self._game_engine.game_over
 
+    @property
+    def should_close(self) -> bool:
+        provider = getattr(type(self._game_engine), "should_close_spectator_view", None)
+        return bool(provider(self._game_engine)) if provider is not None else False
+
     def bind_input(self) -> None:
         """Register this scene's mouse handler after the window exists."""
         self._canvas.set_mouse_callback(self._input_handler.handle_mouse)
@@ -4884,6 +5523,15 @@ class GameScene:
         milliseconds = round(delta_time * 1000)
         if milliseconds > 0:
             self._game_engine.wait(milliseconds)
+        consume_message = getattr(
+            self._game_engine,
+            "consume_match_started_message",
+            None,
+        )
+        if consume_message is not None and self._match_started_dialog_controller:
+            message = consume_message()
+            if message is not None:
+                self._match_started_dialog_controller.show(message)
 
     def draw(self, selected_position: Position | None = None) -> None:
         """Draw the current game frame in scene-layer order."""
@@ -4896,6 +5544,18 @@ class GameScene:
         self._player_activity_renderer.draw()
         self._status_message_controller.draw()
         self._draw_overlays(selected_position)
+        if self._match_started_dialog_controller is not None:
+            self._match_started_dialog_controller.draw()
+        disconnect_provider = getattr(
+            type(self._game_engine), "disconnect_overlay_message", None
+        )
+        disconnect_message = (
+            disconnect_provider(self._game_engine)
+            if disconnect_provider is not None
+            else None
+        )
+        if disconnect_message:
+            self._overlay_renderer.draw_disconnect_status(disconnect_message)
 
     def _draw_overlays(self, selected_position: Position | None) -> None:
         if self._game_engine.game_over:
@@ -4929,6 +5589,9 @@ from view.ui.animation.animation_repository import AnimationRepository
 from view.ui.constants.image_keys import ImageKeys
 from view.ui.constants.ui_paths import BACKGROUND_PATH, BOARD_PATH
 from view.ui.feedback.status_message_controller import StatusMessageController
+from view.ui.feedback.match_started_dialog_controller import (
+    MatchStartedDialogController,
+)
 from view.ui.graphics.image_manager import ImageManager
 from view.ui.input.coordinate_scaler import CoordinateScaler
 from view.ui.input.ui_input_handler import UiInputHandler
@@ -4979,6 +5642,9 @@ class GameSceneFactory:
             player_activity=game_engine.player_activity,
         )
         status_message_controller = StatusMessageController(overlay_renderer)
+        match_started_dialog_controller = MatchStartedDialogController(
+            overlay_renderer
+        )
         input_handler = UiInputHandler(
             layout=layout,
             controller=controller,
@@ -4997,6 +5663,7 @@ class GameSceneFactory:
             player_activity_renderer=player_activity_renderer,
             overlay_renderer=overlay_renderer,
             status_message_controller=status_message_controller,
+            match_started_dialog_controller=match_started_dialog_controller,
         )
 
 ======================================================================
@@ -5315,6 +5982,483 @@ if __name__ == "__main__":
     output_path = ClassCodeExporter.DEFAULT_OUTPUT_DIRECTORY / "all_classes_code.txt"
     print(f"Updated {output_path}" if changed else f"{output_path} is already up to date")
 
+======================================================================
+FILE: tools/run_multiplayer.py
+======================================================================
+"""Launch one local server and two authenticated desktop clients."""
+
+from __future__ import annotations
+
+import socket
+import subprocess
+import sys
+import time
+
+
+HOST = "127.0.0.1"
+PORT = 8765
+SERVER_START_TIMEOUT_SECONDS = 10.0
+
+
+def main() -> int:
+    """Run the complete local multiplayer setup until both clients close."""
+    if _is_port_open():
+        print(f"Port {PORT} is already in use. Close the old server and try again.")
+        return 1
+
+    server = _start_process("network.server_main", hide_window=True)
+    clients: list[subprocess.Popen] = []
+    try:
+        if not _wait_for_server(server):
+            print("The local game server failed to start.")
+            return 1
+
+        clients = [
+            _start_process("network.client_main"),
+            _start_process("network.client_main"),
+        ]
+        print("Kung Fu Chess is running. Log in from both client windows.")
+        for client in clients:
+            client.wait()
+        return 0
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        for client in clients:
+            _stop_process(client)
+        _stop_process(server)
+
+
+def _start_process(module: str, hide_window: bool = False) -> subprocess.Popen:
+    creation_flags = 0
+    if hide_window and sys.platform == "win32":
+        creation_flags = subprocess.CREATE_NO_WINDOW
+    return subprocess.Popen(
+        [sys.executable, "-m", module],
+        creationflags=creation_flags,
+    )
+
+
+def _wait_for_server(server: subprocess.Popen) -> bool:
+    deadline = time.monotonic() + SERVER_START_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if server.poll() is not None:
+            return False
+        if _is_port_open():
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def _is_port_open() -> bool:
+    try:
+        with socket.create_connection((HOST, PORT), timeout=0.2):
+            return True
+    except OSError:
+        return False
+
+
+def _stop_process(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+######################################################################
+SECTION: authentication
+######################################################################
+
+======================================================================
+FILE: authentication/__init__.py
+======================================================================
+"""Server-side user authentication and persistence."""
+
+from authentication.authentication_service import AuthenticationService
+from authentication.password_hasher import ScryptPasswordHasher
+from authentication.sqlite_user_repository import SQLiteUserRepository
+from authentication.user import User
+
+__all__ = [
+    "AuthenticationService",
+    "ScryptPasswordHasher",
+    "SQLiteUserRepository",
+    "User",
+]
+
+======================================================================
+FILE: authentication/authentication_service.py
+======================================================================
+"""Credential validation and account registration business service."""
+
+import re
+
+from authentication.errors import (
+    AuthenticationValidationError,
+    InvalidCredentialsError,
+)
+from authentication.password_hasher import ScryptPasswordHasher
+from authentication.user import User
+from authentication.user_repository import UserRepository
+
+
+class AuthenticationService:
+    """Registers and authenticates users without transport dependencies."""
+
+    INITIAL_RATING = 1200
+    _USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_]{3,32}$")
+
+    def __init__(
+        self,
+        repository: UserRepository,
+        password_hasher: ScryptPasswordHasher | None = None,
+    ) -> None:
+        self._repository = repository
+        self._password_hasher = password_hasher or ScryptPasswordHasher()
+
+    def initialize(self) -> None:
+        """Initialize persistence without destroying existing accounts."""
+        self._repository.initialize()
+
+    def register(self, username: object, password: object) -> User:
+        """Validate and create a uniquely named account."""
+        username_value, password_value = self._validate(username, password)
+        password_hash = self._password_hasher.hash(password_value)
+        return self._repository.create(
+            username_value,
+            password_hash,
+            self.INITIAL_RATING,
+        )
+
+    def login(self, username: object, password: object) -> User:
+        """Return the authenticated account or raise a safe credential error."""
+        username_value, password_value = self._validate(username, password)
+        stored_user = self._repository.find_by_username(username_value)
+        if stored_user is None or not self._password_hasher.verify(
+            password_value,
+            stored_user.password_hash,
+        ):
+            raise InvalidCredentialsError()
+        return stored_user.user
+
+    def current_user(self, username: str) -> User | None:
+        """Return the latest persisted public profile for an authenticated name."""
+        stored_user = self._repository.find_by_username(username)
+        return stored_user.user if stored_user is not None else None
+
+    @classmethod
+    def _validate(cls, username: object, password: object) -> tuple[str, str]:
+        if not isinstance(username, str) or not isinstance(password, str):
+            raise AuthenticationValidationError()
+        if cls._USERNAME_PATTERN.fullmatch(username) is None:
+            raise AuthenticationValidationError()
+        if not 8 <= len(password) <= 128:
+            raise AuthenticationValidationError()
+        return username, password
+
+======================================================================
+FILE: authentication/errors.py
+======================================================================
+"""Expected authentication failures mapped to safe network responses."""
+
+
+class AuthenticationError(Exception):
+    """Base class for expected authentication failures."""
+
+
+class AuthenticationValidationError(AuthenticationError):
+    """Raised when username or password structure is invalid."""
+
+
+class UsernameTakenError(AuthenticationError):
+    """Raised when registration uses an existing username."""
+
+
+class InvalidCredentialsError(AuthenticationError):
+    """Raised when login credentials don't identify a user."""
+
+======================================================================
+FILE: authentication/password_hasher.py
+======================================================================
+"""Versioned scrypt password hashing with per-password random salts."""
+
+import base64
+import hashlib
+import hmac
+import os
+
+
+class ScryptPasswordHasher:
+    """Hashes and verifies passwords using the memory-hard scrypt KDF."""
+
+    _N = 2**14
+    _R = 8
+    _P = 5
+    _SALT_BYTES = 16
+    _KEY_BYTES = 64
+    _MAX_MEMORY = 32 * 1024 * 1024
+
+    def hash(self, password: str) -> str:
+        """Return a versioned encoded hash; never retain plaintext input."""
+        salt = os.urandom(self._SALT_BYTES)
+        digest = self._derive(password, salt, self._N, self._R, self._P)
+        return "$".join(
+            (
+                "scrypt",
+                str(self._N),
+                str(self._R),
+                str(self._P),
+                base64.b64encode(salt).decode("ascii"),
+                base64.b64encode(digest).decode("ascii"),
+            )
+        )
+
+    def verify(self, password: str, encoded_hash: str) -> bool:
+        """Verify a password against a stored versioned hash."""
+        try:
+            algorithm, n, r, p, encoded_salt, encoded_digest = (
+                encoded_hash.split("$")
+            )
+            if algorithm != "scrypt":
+                return False
+            salt = base64.b64decode(encoded_salt, validate=True)
+            expected = base64.b64decode(encoded_digest, validate=True)
+            actual = self._derive(password, salt, int(n), int(r), int(p))
+        except (ValueError, TypeError):
+            return False
+        return hmac.compare_digest(actual, expected)
+
+    @classmethod
+    def _derive(
+        cls,
+        password: str,
+        salt: bytes,
+        n: int,
+        r: int,
+        p: int,
+    ) -> bytes:
+        return hashlib.scrypt(
+            password.encode("utf-8"),
+            salt=salt,
+            n=n,
+            r=r,
+            p=p,
+            maxmem=cls._MAX_MEMORY,
+            dklen=cls._KEY_BYTES,
+        )
+
+======================================================================
+FILE: authentication/sqlite_user_repository.py
+======================================================================
+"""SQLite-backed server-side user account persistence."""
+
+from pathlib import Path
+import sqlite3
+
+from authentication.errors import UsernameTakenError
+from authentication.user import User
+from authentication.user_repository import StoredUser
+
+
+class SQLiteUserRepository:
+    """Creates and queries a migration-safe SQLite users table."""
+
+    def __init__(self, database_path: str | Path) -> None:
+        self._database_path = Path(database_path)
+
+    def initialize(self) -> None:
+        """Create the database and users table if they don't already exist."""
+        self._database_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    rating INTEGER NOT NULL DEFAULT 1200,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS game_results (
+                    game_id TEXT PRIMARY KEY,
+                    winner_user_id INTEGER NOT NULL,
+                    loser_user_id INTEGER NOT NULL,
+                    winner_rating INTEGER NOT NULL,
+                    loser_rating INTEGER NOT NULL,
+                    completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (winner_user_id) REFERENCES users(id),
+                    FOREIGN KEY (loser_user_id) REFERENCES users(id)
+                )
+                """
+            )
+
+    def create(self, username: str, password_hash: str, rating: int) -> User:
+        """Persist and return a new account."""
+        try:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO users (username, password_hash, rating)
+                    VALUES (?, ?, ?)
+                    """,
+                    (username, password_hash, rating),
+                )
+                user_id = int(cursor.lastrowid)
+        except sqlite3.IntegrityError as error:
+            raise UsernameTakenError() from error
+        return User(id=user_id, username=username, rating=rating)
+
+    def find_by_username(self, username: str) -> StoredUser | None:
+        """Return a stored account by its unique username."""
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, username, password_hash, rating
+                FROM users
+                WHERE username = ?
+                """,
+                (username,),
+            ).fetchone()
+        if row is None:
+            return None
+        return StoredUser(
+            user=User(id=row[0], username=row[1], rating=row[3]),
+            password_hash=row[2],
+        )
+
+    def apply_rating_update(
+        self,
+        game_id: str,
+        winner_id: int,
+        loser_id: int,
+        winner_rating: int,
+        loser_rating: int,
+    ) -> bool:
+        """Atomically record a unique result and update both ratings."""
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            winner_update = connection.execute(
+                "UPDATE users SET rating = ? WHERE id = ?",
+                (winner_rating, winner_id),
+            )
+            loser_update = connection.execute(
+                "UPDATE users SET rating = ? WHERE id = ?",
+                (loser_rating, loser_id),
+            )
+            if winner_update.rowcount != 1 or loser_update.rowcount != 1:
+                raise RuntimeError("Both rating owners must exist.")
+            connection.execute(
+                """
+                INSERT INTO game_results (
+                    game_id,
+                    winner_user_id,
+                    loser_user_id,
+                    winner_rating,
+                    loser_rating
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    game_id,
+                    winner_id,
+                    loser_id,
+                    winner_rating,
+                    loser_rating,
+                ),
+            )
+            connection.commit()
+            return True
+        except sqlite3.IntegrityError:
+            connection.rollback()
+            if self._game_result_exists(connection, game_id):
+                return False
+            raise
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    @staticmethod
+    def _game_result_exists(
+        connection: sqlite3.Connection,
+        game_id: str,
+    ) -> bool:
+        row = connection.execute(
+            "SELECT 1 FROM game_results WHERE game_id = ?",
+            (game_id,),
+        ).fetchone()
+        return row is not None
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self._database_path)
+        connection.execute("PRAGMA foreign_keys = ON")
+        return connection
+
+======================================================================
+FILE: authentication/user.py
+======================================================================
+"""Immutable authenticated user data."""
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class User:
+    """Represents one persisted multiplayer account."""
+
+    id: int
+    username: str
+    rating: int
+
+======================================================================
+FILE: authentication/user_repository.py
+======================================================================
+"""Persistence contract used by the authentication service."""
+
+from dataclasses import dataclass
+from typing import Protocol
+
+from authentication.user import User
+
+
+@dataclass(frozen=True)
+class StoredUser:
+    """Server-only account record containing a password hash."""
+
+    user: User
+    password_hash: str
+
+
+class UserRepository(Protocol):
+    """Minimal account persistence required by authentication."""
+
+    def initialize(self) -> None: ...
+
+    def create(self, username: str, password_hash: str, rating: int) -> User: ...
+
+    def find_by_username(self, username: str) -> StoredUser | None: ...
+
+    def apply_rating_update(
+        self,
+        game_id: str,
+        winner_id: int,
+        loser_id: int,
+        winner_rating: int,
+        loser_rating: int,
+    ) -> bool: ...
+
 ######################################################################
 SECTION: common
 ######################################################################
@@ -5336,3 +6480,3648 @@ def utc_now() -> datetime:
     """Return the current time as a timezone-aware UTC datetime."""
 
     return datetime.now(timezone.utc)
+
+######################################################################
+SECTION: events
+######################################################################
+
+======================================================================
+FILE: events/__init__.py
+======================================================================
+"""Synchronous application events and publish/subscribe infrastructure."""
+
+from events.event import Event
+from events.event_bus import EventBus
+from events.game_events import (
+    GameOverEvent,
+    GameStartedEvent,
+    JumpCompletedEvent,
+    JumpStartedEvent,
+    MoveAcceptedEvent,
+    MoveCompletedEvent,
+    MoveStartedEvent,
+    ScoreChangedEvent,
+)
+from events.subscription import Subscription
+
+__all__ = [
+    "Event",
+    "EventBus",
+    "GameOverEvent",
+    "GameStartedEvent",
+    "JumpCompletedEvent",
+    "JumpStartedEvent",
+    "MoveAcceptedEvent",
+    "MoveCompletedEvent",
+    "MoveStartedEvent",
+    "ScoreChangedEvent",
+    "Subscription",
+]
+
+======================================================================
+FILE: events/event.py
+======================================================================
+"""Base data type for events exchanged between application components."""
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Event:
+    """Base type for all application and game events."""
+
+======================================================================
+FILE: events/event_bus.py
+======================================================================
+"""Deterministic, synchronous publish/subscribe event dispatching."""
+
+from collections.abc import Callable
+from typing import TypeVar, cast
+
+from events.event import Event
+from events.subscription import Subscription
+
+EventType = TypeVar("EventType", bound=Event)
+EventHandler = Callable[[EventType], None]
+
+
+class EventBus:
+    """Manages event subscriptions and dispatches events synchronously."""
+
+    def __init__(self) -> None:
+        self._handlers: dict[
+            type[Event],
+            list[tuple[Subscription, EventHandler[Event]]],
+        ] = {}
+        self._owner = object()
+        self._next_identifier = 0
+
+    def subscribe(
+        self,
+        event_type: type[EventType],
+        handler: EventHandler[EventType],
+    ) -> Subscription:
+        """Register a handler for one concrete event type.
+
+        Repeated registration of the same handler for the same event type
+        returns the existing subscription instead of adding a duplicate.
+        """
+        handlers = self._handlers.setdefault(event_type, [])
+        existing = self._find_subscription(handlers, handler)
+        if existing is not None:
+            return existing
+
+        subscription = Subscription(
+            _event_type=event_type,
+            _identifier=self._next_identifier,
+            _owner=self._owner,
+        )
+        self._next_identifier += 1
+        handlers.append((subscription, cast(EventHandler[Event], handler)))
+        return subscription
+
+    def publish(self, event: Event) -> None:
+        """Call subscribed handlers in registration order.
+
+        A snapshot protects the current dispatch from subscription changes made
+        by a handler. Subscriber exceptions intentionally propagate to the
+        publisher.
+        """
+        handlers = tuple(self._handlers.get(type(event), ()))
+        for _, handler in handlers:
+            handler(event)
+
+    def unsubscribe(self, subscription: Subscription) -> None:
+        """Remove a registration if it belongs to this event bus."""
+        if subscription._owner is not self._owner:
+            return
+
+        handlers = self._handlers.get(subscription._event_type)
+        if handlers is None:
+            return
+
+        remaining = [entry for entry in handlers if entry[0] != subscription]
+        if remaining:
+            self._handlers[subscription._event_type] = remaining
+        else:
+            self._handlers.pop(subscription._event_type, None)
+
+    def clear(self) -> None:
+        """Remove all subscriptions from this event bus."""
+        self._handlers.clear()
+
+    @staticmethod
+    def _find_subscription(
+        handlers: list[tuple[Subscription, EventHandler[Event]]],
+        handler: EventHandler[EventType],
+    ) -> Subscription | None:
+        for subscription, registered_handler in handlers:
+            if registered_handler == handler:
+                return subscription
+        return None
+
+======================================================================
+FILE: events/game_events.py
+======================================================================
+"""Immutable events emitted by the game layer."""
+
+from dataclasses import dataclass
+
+from events.event import Event
+from model.piece import PieceColor
+from model.position import Position
+
+
+@dataclass(frozen=True)
+class GameStartedEvent(Event):
+    """Reports that a game has started."""
+
+
+@dataclass(frozen=True)
+class MoveAcceptedEvent(Event):
+    """Reports the source and target of a successfully accepted move."""
+
+    source: Position
+    target: Position
+
+
+@dataclass(frozen=True)
+class MoveStartedEvent(Event):
+    """Reports that a piece has begun moving between two positions."""
+
+    piece_id: int
+    source: Position
+    target: Position
+
+
+@dataclass(frozen=True)
+class MoveCompletedEvent(Event):
+    """Reports that a piece has completed a movement."""
+
+    piece_id: int
+    source: Position
+    target: Position
+
+
+@dataclass(frozen=True)
+class JumpStartedEvent(Event):
+    """Reports that a piece has started jumping at its current position."""
+
+    piece_id: int
+    position: Position
+
+
+@dataclass(frozen=True)
+class JumpCompletedEvent(Event):
+    """Reports that a piece has completed a jump at its current position."""
+
+    piece_id: int
+    position: Position
+
+
+@dataclass(frozen=True)
+class ScoreChangedEvent(Event):
+    """Reports a player's new accumulated capture score."""
+
+    player: PieceColor
+    score: int
+
+
+@dataclass(frozen=True)
+class GameOverEvent(Event):
+    """Reports that a game has ended and identifies its winner, if any."""
+
+    winner: PieceColor | None
+
+======================================================================
+FILE: events/subscription.py
+======================================================================
+"""Immutable registration handle returned by the event bus."""
+
+from dataclasses import dataclass
+
+from events.event import Event
+
+
+@dataclass(frozen=True)
+class Subscription:
+    """Identifies one handler registration for safe unsubscription."""
+
+    _event_type: type[Event]
+    _identifier: int
+    _owner: object
+
+######################################################################
+SECTION: matchmaking
+######################################################################
+
+======================================================================
+FILE: matchmaking/__init__.py
+======================================================================
+"""Transport-independent ELO matchmaking primitives."""
+
+from matchmaking.matchmaking_service import (
+    Match,
+    MatchmakingEntry,
+    MatchmakingService,
+    MatchmakingState,
+)
+
+__all__ = [
+    "Match",
+    "MatchmakingEntry",
+    "MatchmakingService",
+    "MatchmakingState",
+]
+
+======================================================================
+FILE: matchmaking/matchmaking_service.py
+======================================================================
+"""Thread-safe, transport-independent ELO matchmaking."""
+
+from dataclasses import dataclass
+from enum import Enum
+import threading
+from uuid import uuid4
+
+from authentication.user import User
+
+
+class MatchmakingState(Enum):
+    """Lifecycle state of one client in matchmaking."""
+
+    IDLE = "idle"
+    QUEUED = "queued"
+    MATCHED = "matched"
+    IN_GAME = "in_game"
+
+
+@dataclass(frozen=True)
+class MatchmakingEntry:
+    """One authenticated client waiting with an authoritative user profile."""
+
+    client: object
+    user: User
+
+
+@dataclass(frozen=True)
+class Match:
+    """An atomically created pairing; the older entry receives white."""
+
+    game_id: str
+    white: MatchmakingEntry
+    black: MatchmakingEntry
+
+
+class MatchmakingService:
+    """Pairs queued users whose authoritative ratings differ by at most 100."""
+
+    def __init__(self, maximum_rating_difference: int = 100) -> None:
+        if maximum_rating_difference < 0:
+            raise ValueError("maximum_rating_difference cannot be negative")
+        self._maximum_rating_difference = maximum_rating_difference
+        self._queue: list[MatchmakingEntry] = []
+        self._states: dict[object, MatchmakingState] = {}
+        self._lock = threading.RLock()
+
+    def enqueue(self, client: object, user: User) -> Match | None:
+        """Queue a client or atomically return one compatible match."""
+        with self._lock:
+            state = self._states.get(client, MatchmakingState.IDLE)
+            if state is not MatchmakingState.IDLE:
+                return None
+
+            opponent = self._find_opponent(client, user)
+            if opponent is None:
+                self._queue.append(MatchmakingEntry(client, user))
+                self._states[client] = MatchmakingState.QUEUED
+                return None
+
+            self._queue.remove(opponent)
+            challenger = MatchmakingEntry(client, user)
+            self._states[opponent.client] = MatchmakingState.MATCHED
+            self._states[client] = MatchmakingState.MATCHED
+            return Match(str(uuid4()), opponent, challenger)
+
+    def cancel(self, client: object) -> bool:
+        """Remove a queued client; matched or in-game clients are unchanged."""
+        with self._lock:
+            if self._states.get(client) is not MatchmakingState.QUEUED:
+                return False
+            self._queue = [entry for entry in self._queue if entry.client != client]
+            self._states[client] = MatchmakingState.IDLE
+            return True
+
+    def disconnect(self, client: object) -> None:
+        """Ensure a disconnected waiting client can never be matched later."""
+        with self._lock:
+            self._queue = [entry for entry in self._queue if entry.client != client]
+            self._states.pop(client, None)
+
+    def mark_in_game(self, client: object) -> None:
+        """Advance a matched client to the in-game state."""
+        with self._lock:
+            if self._states.get(client) is MatchmakingState.MATCHED:
+                self._states[client] = MatchmakingState.IN_GAME
+
+    def state_for(self, client: object) -> MatchmakingState:
+        """Return a stable state snapshot for a client."""
+        with self._lock:
+            return self._states.get(client, MatchmakingState.IDLE)
+
+    @property
+    def queued_entries(self) -> tuple[MatchmakingEntry, ...]:
+        """Return an immutable queue snapshot for diagnostics and tests."""
+        with self._lock:
+            return tuple(self._queue)
+
+    def _find_opponent(
+        self,
+        client: object,
+        user: User,
+    ) -> MatchmakingEntry | None:
+        for entry in self._queue:
+            if entry.client == client or entry.user.id == user.id:
+                continue
+            if abs(entry.user.rating - user.rating) <= self._maximum_rating_difference:
+                return entry
+        return None
+
+######################################################################
+SECTION: network
+######################################################################
+
+======================================================================
+FILE: network/__init__.py
+======================================================================
+"""Transport-independent command parsing and game-state serialization."""
+
+from network.command_parser import CommandParser
+from network.commands import JumpCommand, MoveCommand
+from network.errors import CommandParseError
+from network.game_snapshot_serializer import GameSnapshotSerializer
+from network.game_server import GameServer
+from network.session_manager import SessionManager
+from network.network_client import NetworkClient, NetworkClientError
+
+__all__ = [
+    "CommandParseError",
+    "CommandParser",
+    "GameSnapshotSerializer",
+    "GameServer",
+    "JumpCommand",
+    "MoveCommand",
+    "NetworkClient",
+    "NetworkClientError",
+    "SessionManager",
+]
+
+======================================================================
+FILE: network/client_main.py
+======================================================================
+"""Executable entry point for the local multiplayer desktop client."""
+
+import argparse
+from collections.abc import Sequence
+
+from app.multiplayer_desktop_application_factory import (
+    MultiplayerDesktopApplicationFactory,
+)
+from network.network_client import NetworkClient
+from view.auth.login_window import LoginWindow
+from view.auth.multiplayer_menu_window import MultiplayerMenuWindow
+
+
+def main(arguments: Sequence[str] | None = None) -> None:
+    """Connect to a local server and run the existing desktop GUI."""
+    parser = argparse.ArgumentParser(description="Run a Kung Fu Chess client.")
+    parser.add_argument("--uri", default="ws://127.0.0.1:8765")
+    options = parser.parse_args(arguments)
+    network_client = NetworkClient(options.uri)
+    network_client.connect()
+
+    def open_game() -> None:
+        MultiplayerDesktopApplicationFactory.create(network_client).run()
+
+    def open_lobby() -> None:
+        MultiplayerMenuWindow(network_client, open_game).run()
+
+    login_window = LoginWindow(
+        register=network_client.register,
+        login=network_client.login,
+        on_login_success=open_lobby,
+    )
+    try:
+        login_window.run()
+    finally:
+        network_client.disconnect()
+
+
+if __name__ == "__main__":
+    main()
+
+======================================================================
+FILE: network/command_parser.py
+======================================================================
+"""Validation and conversion of external dictionaries into commands."""
+
+from network.commands import (
+    JumpCommand,
+    LegalMovesCommand,
+    MoveCommand,
+    NetworkCommand,
+)
+from network.errors import CommandParseError
+from model.position import Position
+
+
+class CommandParser:
+    """Converts validated external message data into domain commands."""
+
+    def parse(self, message: dict[str, object]) -> NetworkCommand:
+        """Return the command represented by ``message``.
+
+        This validates only message shape and primitive value types. Chess
+        legality remains the responsibility of the game rules.
+        """
+        if not isinstance(message, dict):
+            raise CommandParseError("Command must be a dictionary.")
+
+        command_type = message.get("type")
+        if not isinstance(command_type, str):
+            raise CommandParseError("Command type must be a string.")
+
+        if command_type == "move":
+            return self._parse_move(message)
+        if command_type == "jump":
+            return self._parse_jump(message)
+        if command_type == "legal_moves":
+            return self._parse_legal_moves(message)
+        raise CommandParseError(f"Unknown command type: {command_type!r}.")
+
+    def _parse_move(self, message: dict[str, object]) -> MoveCommand:
+        self._require_fields(message, {"type", "source", "target"})
+        return MoveCommand(
+            source=self._parse_position(message["source"], "source"),
+            target=self._parse_position(message["target"], "target"),
+        )
+
+    def _parse_jump(self, message: dict[str, object]) -> JumpCommand:
+        self._require_fields(message, {"type", "position"})
+        return JumpCommand(
+            position=self._parse_position(message["position"], "position")
+        )
+
+    def _parse_legal_moves(
+        self,
+        message: dict[str, object],
+    ) -> LegalMovesCommand:
+        self._require_fields(message, {"type", "position"})
+        return LegalMovesCommand(
+            position=self._parse_position(message["position"], "position")
+        )
+
+    @staticmethod
+    def _require_fields(
+        message: dict[str, object],
+        expected_fields: set[str],
+    ) -> None:
+        if not all(isinstance(field, str) for field in message):
+            raise CommandParseError("Command field names must be strings.")
+
+        actual_fields = set(message)
+        missing_fields = expected_fields - actual_fields
+        if missing_fields:
+            missing = ", ".join(sorted(missing_fields))
+            raise CommandParseError(f"Missing required field(s): {missing}.")
+
+        unexpected_fields = actual_fields - expected_fields
+        if unexpected_fields:
+            unexpected = ", ".join(sorted(unexpected_fields))
+            raise CommandParseError(f"Unexpected field(s): {unexpected}.")
+
+    @staticmethod
+    def _parse_position(value: object, field_name: str) -> Position:
+        if not isinstance(value, dict):
+            raise CommandParseError(f"{field_name} must be a dictionary.")
+        if not all(isinstance(field, str) for field in value):
+            raise CommandParseError(
+                f"{field_name} field names must be strings."
+            )
+        if set(value) != {"row", "column"}:
+            raise CommandParseError(
+                f"{field_name} must contain only row and column."
+            )
+
+        row = value["row"]
+        column = value["column"]
+        if type(row) is not int or type(column) is not int:
+            raise CommandParseError(
+                f"{field_name} row and column must be integers."
+            )
+        return Position(row=row, column=column)
+
+======================================================================
+FILE: network/commands.py
+======================================================================
+"""Immutable commands accepted at the external game boundary."""
+
+from dataclasses import dataclass
+
+from model.position import Position
+
+
+@dataclass(frozen=True)
+class MoveCommand:
+    """Requests movement from one board position to another."""
+
+    source: Position
+    target: Position
+
+
+@dataclass(frozen=True)
+class JumpCommand:
+    """Requests a jump for the piece at a board position."""
+
+    position: Position
+
+
+@dataclass(frozen=True)
+class LegalMovesCommand:
+    """Requests legal destinations for the piece at a board position."""
+
+    position: Position
+
+
+NetworkCommand = MoveCommand | JumpCommand | LegalMovesCommand
+
+======================================================================
+FILE: network/errors.py
+======================================================================
+"""Errors exposed by the transport-independent network boundary."""
+
+
+class CommandParseError(ValueError):
+    """Raised when an external message is not a valid command structure."""
+
+======================================================================
+FILE: network/game_event_serializer.py
+======================================================================
+"""JSON-safe serialization for domain events sent to remote clients."""
+
+from events.event import Event
+from events.game_events import (
+    GameOverEvent,
+    JumpCompletedEvent,
+    JumpStartedEvent,
+    MoveCompletedEvent,
+    MoveStartedEvent,
+    ScoreChangedEvent,
+)
+from model.position import Position
+from network.game_snapshot_serializer import JsonValue
+
+
+class GameEventSerializer:
+    """Converts supported domain events into explicit network payloads."""
+
+    def serialize(self, event: Event) -> dict[str, JsonValue]:
+        """Return a JSON-safe payload for a server-observed game event."""
+        if isinstance(event, MoveStartedEvent):
+            return self._serialize_move("move_started", event)
+        if isinstance(event, MoveCompletedEvent):
+            return self._serialize_move("move_completed", event)
+        if isinstance(event, JumpStartedEvent):
+            return self._serialize_jump("jump_started", event)
+        if isinstance(event, JumpCompletedEvent):
+            return self._serialize_jump("jump_completed", event)
+        if isinstance(event, ScoreChangedEvent):
+            return {
+                "type": "score_changed",
+                "player": event.player.name.lower(),
+                "score": event.score,
+            }
+        if isinstance(event, GameOverEvent):
+            winner = None
+            if event.winner is not None:
+                winner = event.winner.name.lower()
+            return {"type": "game_over", "winner": winner}
+        raise ValueError(f"Unsupported game event: {type(event).__name__}")
+
+    @staticmethod
+    def _serialize_move(
+        event_type: str,
+        event: MoveStartedEvent | MoveCompletedEvent,
+    ) -> dict[str, JsonValue]:
+        return {
+            "type": event_type,
+            "piece_id": event.piece_id,
+            "source": GameEventSerializer._position(event.source),
+            "target": GameEventSerializer._position(event.target),
+        }
+
+    @staticmethod
+    def _serialize_jump(
+        event_type: str,
+        event: JumpStartedEvent | JumpCompletedEvent,
+    ) -> dict[str, JsonValue]:
+        return {
+            "type": event_type,
+            "piece_id": event.piece_id,
+            "position": GameEventSerializer._position(event.position),
+        }
+
+    @staticmethod
+    def _position(position: Position) -> dict[str, JsonValue]:
+        return {"row": position.row, "column": position.column}
+
+======================================================================
+FILE: network/game_server.py
+======================================================================
+"""Async WebSocket orchestration for one authoritative local game."""
+
+import asyncio
+from collections.abc import AsyncIterator
+import json
+import logging
+from datetime import datetime, timezone
+from typing import Protocol, cast
+from uuid import uuid4
+
+from authentication.authentication_service import AuthenticationService
+from authentication.errors import (
+    AuthenticationValidationError,
+    InvalidCredentialsError,
+    UsernameTakenError,
+)
+from authentication.user import User
+from errors.user_input_errors import UserInputError
+from events.event import Event
+from events.game_events import (
+    GameOverEvent,
+    JumpCompletedEvent,
+    JumpStartedEvent,
+    MoveCompletedEvent,
+    MoveStartedEvent,
+    ScoreChangedEvent,
+)
+from game.game_engine import GameEngine
+from matchmaking.matchmaking_service import (
+    Match,
+    MatchmakingEntry,
+    MatchmakingService,
+    MatchmakingState,
+)
+from model.piece import Piece, PieceColor
+from model.position import Position
+from network.command_parser import CommandParser
+from network.commands import (
+    JumpCommand,
+    LegalMovesCommand,
+    MoveCommand,
+    NetworkCommand,
+)
+from network.errors import CommandParseError
+from network.game_event_serializer import GameEventSerializer
+from network.game_snapshot_serializer import GameSnapshotSerializer, JsonValue
+from network.session_manager import SessionManager
+from network.reconnect_session_service import (
+    DisconnectNotice,
+    ReconnectSessionService,
+)
+from rating.persistent_rating_service import PersistentRatingService, RatingUpdate
+from rooms.private_room_service import PrivateRoomError, PrivateRoomService
+from spectators.spectator_service import SpectatableGame, SpectatorService
+from websockets.asyncio.server import serve
+from websockets.exceptions import ConnectionClosed
+
+
+class ClientConnection(Protocol):
+    """Minimum async connection behavior required by ``GameServer``."""
+
+    def __aiter__(self) -> AsyncIterator[str | bytes]: ...
+
+    async def send(self, message: str) -> None: ...
+
+
+class GameServer:
+    """Coordinates clients and commands for one authoritative game engine."""
+
+    _SIMULATION_INTERVAL_SECONDS = 0.016
+    _OBSERVED_EVENT_TYPES = (
+        MoveStartedEvent,
+        MoveCompletedEvent,
+        JumpStartedEvent,
+        JumpCompletedEvent,
+        ScoreChangedEvent,
+        GameOverEvent,
+    )
+
+    def __init__(
+        self,
+        game_engine: GameEngine,
+        session_manager: SessionManager | None = None,
+        command_parser: CommandParser | None = None,
+        snapshot_serializer: GameSnapshotSerializer | None = None,
+        event_serializer: GameEventSerializer | None = None,
+        logger: logging.Logger | None = None,
+        authentication_service: AuthenticationService | None = None,
+        rating_service: PersistentRatingService | None = None,
+        matchmaking_service: MatchmakingService | None = None,
+        reconnect_service: ReconnectSessionService | None = None,
+        room_service: PrivateRoomService | None = None,
+        spectator_service: SpectatorService | None = None,
+    ) -> None:
+        self._game_engine = game_engine
+        self._sessions = session_manager or SessionManager()
+        self._command_parser = command_parser or CommandParser()
+        self._snapshot_serializer = (
+            snapshot_serializer or GameSnapshotSerializer()
+        )
+        self._event_serializer = event_serializer or GameEventSerializer()
+        self._logger = logger or logging.getLogger(__name__)
+        self._authentication_service = authentication_service
+        self._authenticated_users: dict[object, User] = {}
+        self._rating_service = rating_service
+        self._matchmaking = matchmaking_service or MatchmakingService()
+        self._reconnect = reconnect_service or ReconnectSessionService()
+        self._rooms = room_service or PrivateRoomService()
+        self._spectators = spectator_service or SpectatorService()
+        self._disconnect_tasks: dict[int, asyncio.Task[None]] = {}
+        self._game_users_by_color: dict[PieceColor, User] = {}
+        self._game_id = str(uuid4())
+        self._rating_finalization_started = False
+        self._command_lock = asyncio.Lock()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._broadcast_tasks: set[asyncio.Task[None]] = set()
+        self._next_event_id = 1
+        self._subscribe_to_game_events()
+
+    @property
+    def game_engine(self) -> GameEngine:
+        """Return the single authoritative engine shared by all clients."""
+        return self._game_engine
+
+    async def handle_client(self, connection: ClientConnection) -> None:
+        """Accept one connection and process messages until it disconnects."""
+        self._loop = asyncio.get_running_loop()
+        if self._authentication_service is None:
+            accepted = await self._accept_game_client(connection)
+            if not accepted:
+                return
+        else:
+            self._log(logging.INFO, "client_connected")
+        try:
+            async for raw_message in connection:
+                await self.handle_message(connection, raw_message)
+        except ConnectionClosed:
+            pass
+        finally:
+            color = self._sessions.color_for(connection)
+            await self._handle_disconnect(connection)
+            color_name = color.name if color is not None else "UNASSIGNED"
+            self._log(logging.INFO, "client_disconnected", reason=color_name.lower())
+
+    async def handle_message(
+        self,
+        connection: ClientConnection,
+        raw_message: str | bytes,
+    ) -> None:
+        """Decode, authorize, and execute one external client message."""
+        try:
+            message = self._decode_message(raw_message)
+        except json.JSONDecodeError:
+            await self._reject(connection, "invalid_json")
+            return
+        except CommandParseError:
+            await self._reject(connection, "malformed_command")
+            return
+
+        message_type = message.get("type")
+        if self._authentication_service is not None and message_type == "resume_session":
+            await self._handle_session_resume(connection, message.get("token"))
+            return
+        if self._authentication_service is not None and message_type in {
+            "register",
+            "login",
+        }:
+            await self._handle_authentication(connection, message)
+            return
+        if (
+            self._authentication_service is not None
+            and connection not in self._authenticated_users
+        ):
+            await self._reject(connection, "authentication_required")
+            return
+        if self._authentication_service is not None and message_type == "create_room":
+            await self._handle_create_room(connection)
+            return
+        if self._authentication_service is not None and message_type == "join_room":
+            await self._handle_join_room(connection, message.get("room_code"))
+            return
+        if self._authentication_service is not None and message_type == "cancel_room":
+            await self._handle_cancel_room(connection)
+            return
+        if message_type == "list_spectatable_games":
+            await self._handle_list_spectatable_games(connection)
+            return
+        if message_type == "spectate_game":
+            await self._handle_spectate_game(connection, message.get("game_id"))
+            return
+        if message_type == "stop_spectating":
+            await self._handle_stop_spectating(connection)
+            return
+        if self._spectators.is_spectator(connection):
+            await self._reject(connection, "spectator_read_only")
+            return
+        if self._authentication_service is not None and self._reconnect.is_paused():
+            await self._send_message(
+                connection,
+                {"type": "game_paused", "reason": "opponent_disconnected"},
+            )
+            return
+        if self._authentication_service is not None and message_type == "start_matchmaking":
+            await self._handle_matchmaking_request(connection)
+            return
+        if self._authentication_service is not None and message_type == "cancel_matchmaking":
+            await self._handle_matchmaking_cancel(connection)
+            return
+        if (
+            self._authentication_service is not None
+            and self._matchmaking.state_for(connection) is not MatchmakingState.IN_GAME
+            and self._reconnect.participant_for_connection(connection) is None
+        ):
+            await self._reject(connection, "not_in_game")
+            return
+
+        try:
+            command = self._command_parser.parse(message)
+        except CommandParseError:
+            await self._reject(connection, "malformed_command")
+            return
+
+        try:
+            async with self._command_lock:
+                response = self._execute_command(connection, command)
+        except Exception:
+            self._logger.exception("Unexpected server error while executing command")
+            await self._send_message(connection, {"type": "server_error"})
+            return
+
+        await self._send_message(connection, response)
+        if response["type"] == "command_accepted":
+            await self.broadcast_snapshot()
+
+    async def _handle_authentication(
+        self,
+        connection: ClientConnection,
+        message: dict[str, object],
+    ) -> None:
+        service = self._authentication_service
+        if service is None:
+            return
+        username = message.get("username")
+        password = message.get("password")
+        try:
+            if message["type"] == "register":
+                user = await asyncio.to_thread(
+                    service.register,
+                    username,
+                    password,
+                )
+                await self._send_message(
+                    connection,
+                    self._authentication_response("registration_success", user),
+                )
+                self._log(
+                    logging.INFO,
+                    "registration_succeeded",
+                    user_id=user.id,
+                    username=user.username,
+                )
+                return
+
+            user = await asyncio.to_thread(service.login, username, password)
+            self._authenticated_users[connection] = user
+            await self._send_message(
+                connection,
+                self._authentication_response("login_success", user),
+            )
+            self._log(
+                logging.INFO,
+                "login_succeeded",
+                user_id=user.id,
+                username=user.username,
+            )
+        except UsernameTakenError:
+            self._log(logging.WARNING, "registration_failed", reason="username_taken")
+            await self._send_message(connection, {"type": "username_taken"})
+        except InvalidCredentialsError:
+            self._log(logging.WARNING, "login_failed", reason="invalid_credentials")
+            await self._send_message(connection, {"type": "invalid_credentials"})
+        except AuthenticationValidationError:
+            self._log(logging.WARNING, "authentication_validation_failed")
+            await self._send_message(connection, {"type": "validation_error"})
+        except Exception:
+            self._logger.exception("Unexpected authentication server error")
+            await self._send_message(connection, {"type": "server_error"})
+
+    async def _handle_matchmaking_request(
+        self,
+        connection: ClientConnection,
+    ) -> None:
+        service = self._authentication_service
+        authenticated_user = self._authenticated_users[connection]
+        if service is None:
+            return
+        if self._rooms.contains(connection):
+            await self._reject(connection, "invalid_state")
+            return
+        if self._spectators.is_spectator(connection):
+            await self._reject(connection, "invalid_state")
+            return
+        current_user = await asyncio.to_thread(
+            service.current_user,
+            authenticated_user.username,
+        )
+        if current_user is None:
+            await self._send_message(connection, {"type": "server_error"})
+            return
+        self._authenticated_users[connection] = current_user
+        previous_state = self._matchmaking.state_for(connection)
+        match = self._matchmaking.enqueue(connection, current_user)
+        if match is not None:
+            await self._start_match(match)
+            return
+        if previous_state is MatchmakingState.IDLE:
+            self._log(
+                logging.INFO,
+                "matchmaking_joined",
+                user_id=current_user.id,
+                username=current_user.username,
+            )
+            await self._send_message(
+                connection,
+                {"type": "matchmaking_queued", "rating": current_user.rating},
+            )
+            return
+        await self._send_message(
+            connection,
+            {"type": "matchmaking_status", "state": previous_state.value},
+        )
+
+    async def _handle_matchmaking_cancel(
+        self,
+        connection: ClientConnection,
+    ) -> None:
+        if self._matchmaking.cancel(connection):
+            user = self._authenticated_users.get(connection)
+            self._log(
+                logging.INFO,
+                "matchmaking_canceled",
+                user_id=user.id if user else None,
+                username=user.username if user else None,
+            )
+            await self._send_message(connection, {"type": "matchmaking_canceled"})
+            return
+        await self._reject(connection, "not_searching")
+
+    async def _handle_create_room(self, connection: ClientConnection) -> None:
+        if not self._can_enter_private_room(connection):
+            await self._send_room_error(connection, "invalid_state")
+            return
+        service = self._authentication_service
+        user = self._authenticated_users[connection]
+        if service is not None:
+            current = await asyncio.to_thread(service.current_user, user.username)
+            if current is not None:
+                user = current
+                self._authenticated_users[connection] = current
+        try:
+            room = self._rooms.create(connection, user)
+        except PrivateRoomError as error:
+            await self._send_room_error(connection, error.code.value)
+            return
+        await self._send_message(
+            connection,
+            {"type": "room_created", "room_code": room.code},
+        )
+        self._log(
+            logging.INFO,
+            "room_created",
+            room_code=room.code,
+            user_id=user.id,
+            username=user.username,
+        )
+
+    async def _handle_join_room(
+        self,
+        connection: ClientConnection,
+        room_code: object,
+    ) -> None:
+        if not self._can_join_private_room(connection):
+            await self._send_room_error(connection, "invalid_state")
+            return
+        user = self._authenticated_users[connection]
+        service = self._authentication_service
+        if service is not None:
+            current = await asyncio.to_thread(service.current_user, user.username)
+            if current is not None:
+                user = current
+                self._authenticated_users[connection] = current
+        try:
+            room_match = self._rooms.join(room_code, connection, user)
+        except PrivateRoomError as error:
+            await self._send_room_error(connection, error.code.value)
+            return
+        creator = room_match.creator
+        if service is not None:
+            current_creator = await asyncio.to_thread(
+                service.current_user, creator.username
+            )
+            if current_creator is not None:
+                creator = current_creator
+                self._authenticated_users[room_match.creator_connection] = creator
+        room_joined: dict[str, JsonValue] = {
+            "type": "room_joined",
+            "room_code": room_match.room_code,
+        }
+        await self._send_message(connection, room_joined)
+        await self._send_message(
+            cast(ClientConnection, room_match.creator_connection), room_joined
+        )
+        self._log(
+            logging.INFO,
+            "room_joined",
+            room_code=room_match.room_code,
+            user_id=user.id,
+            username=user.username,
+            game_id=room_match.game_id,
+        )
+        match = Match(
+            room_match.game_id,
+            MatchmakingEntry(room_match.creator_connection, creator),
+            MatchmakingEntry(room_match.guest_connection, user),
+        )
+        await self._start_match(match)
+        self._rooms.release_match(room_match.room_code)
+
+    async def _handle_cancel_room(self, connection: ClientConnection) -> None:
+        try:
+            room_code = self._rooms.cancel(connection)
+        except PrivateRoomError as error:
+            await self._send_room_error(connection, error.code.value)
+            return
+        await self._send_message(
+            connection,
+            {"type": "room_closed", "room_code": room_code},
+        )
+        self._log(logging.INFO, "room_canceled", room_code=room_code)
+
+    def _can_enter_private_room(self, connection: object) -> bool:
+        return (
+            self._matchmaking.state_for(connection) is MatchmakingState.IDLE
+            and not self._rooms.contains(connection)
+            and self._reconnect.participant_for_connection(connection) is None
+            and not self._sessions.clients
+        )
+
+    def _can_join_private_room(self, connection: object) -> bool:
+        return (
+            self._matchmaking.state_for(connection) is MatchmakingState.IDLE
+            and not self._rooms.contains(connection)
+            and self._reconnect.participant_for_connection(connection) is None
+        )
+
+    async def _send_room_error(
+        self,
+        connection: ClientConnection,
+        reason: str,
+    ) -> None:
+        await self._send_message(
+            connection,
+            {"type": "room_error", "reason": reason},
+        )
+
+    async def _handle_list_spectatable_games(
+        self,
+        connection: ClientConnection,
+    ) -> None:
+        games: list[JsonValue] = []
+        for game in self._spectators.list_games():
+            games.append(
+                {
+                    "game_id": game.game_id,
+                    "white": {
+                        "username": game.white.username,
+                        "rating": game.white.rating,
+                    },
+                    "black": {
+                        "username": game.black.username,
+                        "rating": game.black.rating,
+                    },
+                }
+            )
+        await self._send_message(
+            connection,
+            {"type": "spectatable_games", "games": games},
+        )
+
+    async def _handle_spectate_game(
+        self,
+        connection: ClientConnection,
+        game_id: object,
+    ) -> None:
+        if not self._can_start_spectating(connection):
+            await self._send_spectator_error(connection, "invalid_state")
+            return
+        if not self._spectators.join(game_id, connection):
+            await self._send_spectator_error(connection, "game_not_found")
+            return
+        await self._send_message(
+            connection,
+            {"type": "spectating_started", "game_id": str(game_id)},
+        )
+        user = self._authenticated_users.get(connection)
+        self._log(
+            logging.INFO,
+            "spectator_joined",
+            game_id=str(game_id),
+            user_id=user.id if user else None,
+            username=user.username if user else None,
+        )
+        await self._send_snapshot(connection)
+        await self._send_message(
+            connection,
+            {"type": "player_profiles", "players": self._profile_payloads()},
+        )
+
+    async def _handle_stop_spectating(self, connection: ClientConnection) -> None:
+        game_id = self._spectators.leave(connection)
+        if game_id is None:
+            await self._send_spectator_error(connection, "invalid_state")
+            return
+        await self._send_message(connection, {"type": "spectating_stopped"})
+        self._log(logging.INFO, "spectator_left", game_id=game_id)
+
+    def _can_start_spectating(self, connection: object) -> bool:
+        return (
+            self._matchmaking.state_for(connection) is MatchmakingState.IDLE
+            and not self._rooms.contains(connection)
+            and self._reconnect.participant_for_connection(connection) is None
+            and self._sessions.color_for(connection) is None
+            and not self._spectators.is_spectator(connection)
+        )
+
+    async def _send_spectator_error(
+        self,
+        connection: ClientConnection,
+        reason: str,
+    ) -> None:
+        await self._send_message(
+            connection,
+            {"type": "spectator_error", "reason": reason},
+        )
+
+    async def _start_match(self, match: Match) -> None:
+        if self._sessions.clients:
+            self._matchmaking.disconnect(match.white.client)
+            self._matchmaking.disconnect(match.black.client)
+            await self._send_message(match.white.client, {"type": "server_error"})
+            await self._send_message(match.black.client, {"type": "server_error"})
+            return
+        self._sessions.assign(match.white.client, PieceColor.WHITE)
+        self._sessions.assign(match.black.client, PieceColor.BLACK)
+        self._game_id = match.game_id
+        self._rating_finalization_started = False
+        self._game_users_by_color = {
+            PieceColor.WHITE: match.white.user,
+            PieceColor.BLACK: match.black.user,
+        }
+        resume_tokens = self._reconnect.create_game(
+            match.game_id,
+            (
+                (match.white.client, match.white.user, PieceColor.WHITE),
+                (match.black.client, match.black.user, PieceColor.BLACK),
+            ),
+        )
+        self._spectators.register_game(
+            SpectatableGame(match.game_id, match.white.user, match.black.user)
+        )
+        self._log(
+            logging.INFO,
+            "game_started",
+            game_id=match.game_id,
+        )
+        self._log(
+            logging.INFO,
+            "match_created",
+            game_id=match.game_id,
+        )
+        profiles = self._profile_payloads()
+        match_message: dict[str, JsonValue] = {
+            "type": "match_found",
+            "game_id": match.game_id,
+            "players": profiles,
+        }
+        for connection, color in (
+            (match.white.client, PieceColor.WHITE),
+            (match.black.client, PieceColor.BLACK),
+        ):
+            client = cast(ClientConnection, connection)
+            await self._send_message(client, match_message)
+            await self._send_message(
+                client,
+                {"type": "connection_accepted", "color": color.name.lower()},
+            )
+            await self._send_snapshot(client)
+            await self._send_message(
+                client,
+                {"type": "session_resume_token", "token": resume_tokens[connection]},
+            )
+            self._matchmaking.mark_in_game(connection)
+
+    async def _handle_disconnect(self, connection: object) -> None:
+        spectator_game_id = self._spectators.leave(connection)
+        if spectator_game_id is not None:
+            self._log(logging.INFO, "spectator_left", game_id=spectator_game_id)
+            self._authenticated_users.pop(connection, None)
+            return
+        closed_room = self._rooms.disconnect(connection)
+        if closed_room is not None:
+            self._log(logging.INFO, "room_cleaned_up", room_code=closed_room)
+        self._matchmaking.disconnect(connection)
+        notice = self._reconnect.disconnect(connection)
+        self._sessions.disconnect(connection)
+        self._authenticated_users.pop(connection, None)
+        if notice is None:
+            return
+        self._log(
+            logging.WARNING,
+            "participant_disconnected",
+            game_id=notice.game_id,
+            user_id=notice.user.id,
+            username=notice.user.username,
+        )
+        if notice.opponent_connection is not None:
+            await self._send_message(
+                cast(ClientConnection, notice.opponent_connection),
+                {
+                    "type": "opponent_disconnected",
+                    "game_id": notice.game_id,
+                    "username": notice.user.username,
+                    "reconnect_timeout_seconds": self._reconnect.timeout_seconds,
+                    "deadline": datetime.fromtimestamp(
+                        notice.deadline, timezone.utc
+                    ).isoformat(),
+                },
+            )
+        old_task = self._disconnect_tasks.pop(notice.user.id, None)
+        if old_task is not None:
+            old_task.cancel()
+        task = asyncio.create_task(self._wait_for_disconnect_timeout(notice))
+        self._disconnect_tasks[notice.user.id] = task
+
+    async def _handle_session_resume(
+        self,
+        connection: ClientConnection,
+        token: object,
+    ) -> None:
+        result = self._reconnect.resume(connection, token)
+        if result is None:
+            await self._send_message(
+                connection,
+                {"type": "session_resume_rejected", "reason": "invalid_or_expired_token"},
+            )
+            return
+        task = self._disconnect_tasks.pop(result.user.id, None)
+        if task is not None:
+            task.cancel()
+        self._authenticated_users[connection] = result.user
+        self._sessions.assign(connection, result.color)
+        self._log(
+            logging.INFO,
+            "session_resumed",
+            game_id=result.game_id,
+            user_id=result.user.id,
+            username=result.user.username,
+        )
+        await self._send_message(
+            connection,
+            {
+                "type": "session_resumed",
+                "game_id": result.game_id,
+                "color": result.color.name.lower(),
+            },
+        )
+        await self._send_message(
+            connection,
+            {"type": "session_resume_token", "token": result.token},
+        )
+        await self._send_snapshot(connection)
+        await self._send_message(
+            connection,
+            {"type": "player_profiles", "players": self._profile_payloads()},
+        )
+        if result.opponent_connection is not None:
+            await self._send_message(
+                cast(ClientConnection, result.opponent_connection),
+                {
+                    "type": "opponent_reconnected",
+                    "game_id": result.game_id,
+                    "username": result.user.username,
+                },
+            )
+
+    async def _wait_for_disconnect_timeout(self, notice: DisconnectNotice) -> None:
+        delay = max(0.0, notice.deadline - datetime.now(timezone.utc).timestamp())
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+        result = self._reconnect.expire(notice.user.id, notice.deadline)
+        if result is None:
+            return
+        self._log(
+            logging.WARNING,
+            "reconnect_timeout",
+            game_id=result.game_id,
+            user_id=notice.user.id,
+            username=notice.user.username,
+        )
+        if result.winner_color is not None:
+            await self._finalize_ratings(result.winner_color)
+        message: dict[str, JsonValue] = {
+            "type": "disconnect_forfeit",
+            "game_id": result.game_id,
+            "winner": result.winner.username if result.winner else None,
+            "loser": result.loser.username if result.loser else None,
+            "reason": "reconnect_timeout",
+        }
+        for target in result.connections:
+            await self._send_message(cast(ClientConnection, target), message)
+        self._log(
+            logging.WARNING,
+            "disconnect_forfeit",
+            game_id=result.game_id,
+            username=result.loser.username if result.loser else None,
+        )
+        for target in result.connections:
+            self._sessions.disconnect(target)
+            self._matchmaking.disconnect(target)
+            self._authenticated_users.pop(target, None)
+        self._reconnect.cleanup()
+        await self._close_spectator_views(result.game_id)
+        self._game_users_by_color.clear()
+
+    async def _accept_game_client(self, connection: ClientConnection) -> bool:
+        color = self._sessions.connect(connection)
+        if color is None:
+            self._logger.info("Rejected client connection: game is full")
+            await self._send_message(
+                connection,
+                {"type": "connection_rejected", "reason": "game_full"},
+            )
+            return False
+        self._logger.info("Client accepted with color %s", color.name)
+        await self._send_message(
+            connection,
+            {"type": "connection_accepted", "color": color.name.lower()},
+        )
+        await self._send_snapshot(connection)
+        return True
+
+    @staticmethod
+    def _authentication_response(
+        response_type: str,
+        user: User,
+    ) -> dict[str, JsonValue]:
+        return {
+            "type": response_type,
+            "username": user.username,
+            "rating": user.rating,
+        }
+
+    async def broadcast_snapshot(self) -> None:
+        """Broadcast the current authoritative game snapshot."""
+        await self.broadcast(
+            {
+                "type": "game_snapshot",
+                "state": self._snapshot_serializer.serialize(self._game_engine),
+            }
+        )
+
+    async def broadcast(self, message: dict[str, JsonValue]) -> None:
+        """Send one JSON-safe message to all currently accepted clients."""
+        encoded = json.dumps(message)
+        recipients = dict.fromkeys(
+            (*self._sessions.clients, *self._spectators.spectators_for(self._game_id))
+        )
+        clients = cast(tuple[ClientConnection, ...], tuple(recipients))
+        if not clients:
+            return
+        await asyncio.gather(
+            *(self._send_encoded(client, encoded) for client in clients)
+        )
+
+    async def run(self, host: str, port: int) -> None:
+        """Listen for local WebSocket clients until the task is cancelled."""
+        self._loop = asyncio.get_running_loop()
+        simulation_task = asyncio.create_task(self._run_simulation())
+        self._log(logging.INFO, "server_started", reason=f"{host}:{port}")
+        try:
+            async with serve(self.handle_client, host, port) as server:
+                await server.serve_forever()
+        finally:
+            simulation_task.cancel()
+            await asyncio.gather(simulation_task, return_exceptions=True)
+            self._log(logging.INFO, "server_stopped")
+
+    def _execute_command(
+        self,
+        connection: ClientConnection,
+        command: NetworkCommand,
+    ) -> dict[str, JsonValue]:
+        if self._game_engine.game_over:
+            return self._rejection("game_over")
+
+        position = command.source if isinstance(command, MoveCommand) else command.position
+        piece = self._controlled_piece(connection, position)
+        if isinstance(piece, str):
+            return self._rejection(piece)
+
+        if isinstance(command, LegalMovesCommand):
+            legal_moves = self._game_engine.get_legal_moves(command.position)
+            return {
+                "type": "legal_moves",
+                "source": self._serialize_position(command.position),
+                "positions": [
+                    self._serialize_position(position)
+                    for position in sorted(
+                        legal_moves,
+                        key=lambda item: (item.row, item.column),
+                    )
+                ],
+            }
+
+        if isinstance(command, MoveCommand):
+            result = self._game_engine.request_move(command.source, command.target)
+            if not result.is_accepted:
+                return self._rejection(result.reason.value)
+            return {"type": "command_accepted", "command": "move"}
+
+        try:
+            self._game_engine.jump(command.position)
+        except UserInputError:
+            return self._rejection("illegal_jump")
+        return {"type": "command_accepted", "command": "jump"}
+
+    def _controlled_piece(
+        self,
+        connection: ClientConnection,
+        position: Position,
+    ) -> Piece | str:
+        if not self._game_engine.is_inside(position):
+            return "missing_piece"
+        piece = self._game_engine.get_piece(position)
+        if not isinstance(piece, Piece):
+            return "missing_piece"
+        if not self._sessions.can_control(connection, piece.color):
+            return "not_your_piece"
+        return piece
+
+    async def _run_simulation(self) -> None:
+        loop = asyncio.get_running_loop()
+        previous_time = loop.time()
+        while True:
+            await asyncio.sleep(self._SIMULATION_INTERVAL_SECONDS)
+            current_time = loop.time()
+            elapsed = max(1, int((current_time - previous_time) * 1000))
+            previous_time = current_time
+            async with self._command_lock:
+                before = self._snapshot_serializer.serialize(self._game_engine)
+                self._game_engine.wait(elapsed)
+                after = self._snapshot_serializer.serialize(self._game_engine)
+            if after != before:
+                await self.broadcast(
+                    {"type": "game_snapshot", "state": after}
+                )
+
+    def _subscribe_to_game_events(self) -> None:
+        for event_type in self._OBSERVED_EVENT_TYPES:
+            self._game_engine.event_bus.subscribe(event_type, self._on_game_event)
+
+    def _on_game_event(self, event: Event) -> None:
+        message: dict[str, JsonValue] = {
+            "type": "game_event",
+            "event_id": self._next_event_id,
+            "event": self._event_serializer.serialize(event),
+        }
+        self._next_event_id += 1
+        loop = self._loop
+        if loop is None:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                self._logger.warning("Cannot broadcast game event without a running loop")
+                return
+            self._loop = loop
+        task = loop.create_task(self.broadcast(message))
+        self._broadcast_tasks.add(task)
+        task.add_done_callback(self._broadcast_tasks.discard)
+        if (
+            isinstance(event, GameOverEvent)
+            and not self._rating_finalization_started
+        ):
+            self._log(
+                logging.INFO,
+                "game_over",
+                game_id=self._game_id,
+            )
+            self._rating_finalization_started = True
+            rating_task = loop.create_task(self._finish_completed_game(event.winner))
+            self._broadcast_tasks.add(rating_task)
+            rating_task.add_done_callback(self._broadcast_tasks.discard)
+
+    async def _finish_completed_game(self, winner: PieceColor | None) -> None:
+        if winner is not None:
+            await self._finalize_ratings(winner)
+        await self._close_spectator_views(self._game_id)
+
+    async def _close_spectator_views(self, game_id: str) -> None:
+        spectators = self._spectators.close_game(game_id)
+        for spectator in spectators:
+            await self._send_message(
+                cast(ClientConnection, spectator),
+                {"type": "spectating_stopped", "reason": "game_ended"},
+            )
+
+    async def _finalize_ratings(self, winner_color: PieceColor) -> None:
+        service = self._rating_service
+        if service is None:
+            return
+        players = self._users_by_color()
+        winner = players.get(winner_color)
+        loser_color = (
+            PieceColor.BLACK
+            if winner_color is PieceColor.WHITE
+            else PieceColor.WHITE
+        )
+        loser = players.get(loser_color)
+        if winner is None or loser is None:
+            return
+        try:
+            update = await asyncio.to_thread(
+                service.record_result,
+                self._game_id,
+                winner,
+                loser,
+            )
+        except Exception:
+            self._logger.exception("Failed to persist multiplayer ratings")
+            await self.broadcast({"type": "server_error"})
+            return
+        if update is None:
+            return
+        self._replace_authenticated_user(update.winner)
+        self._replace_authenticated_user(update.loser)
+        await self._broadcast_rating_update(update)
+        self._log(
+            logging.INFO,
+            "elo_ratings_updated",
+            game_id=self._game_id,
+            user_id=update.winner.id,
+            username=update.winner.username,
+        )
+
+    async def _broadcast_player_profiles(self, message_type: str) -> None:
+        profiles = self._profile_payloads()
+        if len(profiles) != 2:
+            return
+        await self.broadcast({"type": message_type, "players": profiles})
+
+    async def _broadcast_rating_update(self, update: RatingUpdate) -> None:
+        changes = {
+            update.winner.id: update.winner_change,
+            update.loser.id: update.loser_change,
+        }
+        await self.broadcast(
+            {
+                "type": "rating_updated",
+                "players": self._profile_payloads(changes),
+            }
+        )
+
+    def _profile_payloads(
+        self,
+        rating_changes: dict[int, int] | None = None,
+    ) -> list[JsonValue]:
+        profiles: list[JsonValue] = []
+        users = self._users_by_color()
+        for color in (PieceColor.WHITE, PieceColor.BLACK):
+            user = users.get(color)
+            if user is None:
+                continue
+            profile: dict[str, JsonValue] = {
+                "username": user.username,
+                "color": color.name.lower(),
+                "rating": user.rating,
+            }
+            if rating_changes is not None:
+                profile["rating_change"] = rating_changes[user.id]
+            profiles.append(profile)
+        return profiles
+
+    def _users_by_color(self) -> dict[PieceColor, User]:
+        users: dict[PieceColor, User] = dict(self._game_users_by_color)
+        for connection, user in self._authenticated_users.items():
+            color = self._sessions.color_for(connection)
+            if color is not None:
+                users[color] = user
+        return users
+
+    def _replace_authenticated_user(self, updated_user: User) -> None:
+        for color, user in self._game_users_by_color.items():
+            if user.id == updated_user.id:
+                self._game_users_by_color[color] = updated_user
+                break
+        for connection, user in self._authenticated_users.items():
+            if user.id == updated_user.id:
+                self._authenticated_users[connection] = updated_user
+                return
+
+    @staticmethod
+    def _decode_message(raw_message: str | bytes) -> dict[str, object]:
+        decoded = json.loads(raw_message)
+        if not isinstance(decoded, dict):
+            raise CommandParseError("Command JSON must contain an object.")
+        return decoded
+
+    async def _send_snapshot(self, connection: ClientConnection) -> None:
+        await self._send_message(
+            connection,
+            {
+                "type": "game_snapshot",
+                "state": self._snapshot_serializer.serialize(self._game_engine),
+            },
+        )
+
+    async def _reject(self, connection: ClientConnection, reason: str) -> None:
+        self._logger.info("Rejected client command: %s", reason)
+        await self._send_message(connection, self._rejection(reason))
+
+    @staticmethod
+    def _rejection(reason: str) -> dict[str, JsonValue]:
+        return {"type": "command_rejected", "reason": reason}
+
+    @staticmethod
+    def _serialize_position(position: Position) -> dict[str, JsonValue]:
+        return {"row": position.row, "column": position.column}
+
+    async def _send_message(
+        self,
+        connection: ClientConnection,
+        message: dict[str, JsonValue],
+    ) -> None:
+        await self._send_encoded(connection, json.dumps(message))
+
+    async def _send_encoded(
+        self,
+        connection: ClientConnection,
+        encoded_message: str,
+    ) -> None:
+        try:
+            await connection.send(encoded_message)
+        except Exception:
+            self._sessions.disconnect(connection)
+            self._logger.warning(
+                "Removed client after a failed WebSocket send",
+                exc_info=True,
+            )
+
+    def _log(self, level: int, event_type: str, **context: object) -> None:
+        """Emit one structured server event without transport-sensitive data."""
+        safe_context = {
+            key: value for key, value in context.items() if value is not None
+        }
+        self._logger.log(
+            level,
+            event_type,
+            extra={"event_type": event_type, **safe_context},
+        )
+
+======================================================================
+FILE: network/game_snapshot_serializer.py
+======================================================================
+"""JSON-safe serialization of the current public game state."""
+
+from typing import TypeAlias
+
+from game.game_engine import GameEngine
+from model.board import Board
+from model.piece import Piece, PieceColor
+from model.position import Position
+from realtime.motion import Motion
+
+JsonValue: TypeAlias = (
+    dict[str, "JsonValue"]
+    | list["JsonValue"]
+    | str
+    | int
+    | float
+    | bool
+    | None
+)
+
+
+class GameSnapshotSerializer:
+    """Converts public game state into a deterministic JSON-safe dictionary."""
+
+    def serialize(self, game_engine: GameEngine) -> dict[str, JsonValue]:
+        """Return a JSON-safe snapshot without modifying the game engine."""
+        board = game_engine.get_board()
+        winner = game_engine.get_winner()
+        return {
+            "board": self._serialize_board(board),
+            "motions": [
+                self._serialize_motion(motion)
+                for motion in game_engine.get_motions()
+            ],
+            "scores": self._serialize_scores(game_engine),
+            "game_over": game_engine.game_over,
+            "winner": self._serialize_color(winner),
+        }
+
+    def _serialize_board(self, board: Board) -> dict[str, JsonValue]:
+        pieces: list[JsonValue] = []
+        for row in range(board.height):
+            for column in range(board.width):
+                piece = board.get_piece(Position(row, column))
+                if isinstance(piece, Piece):
+                    pieces.append(self._serialize_piece(piece))
+        return {
+            "width": board.width,
+            "height": board.height,
+            "pieces": pieces,
+        }
+
+    @staticmethod
+    def _serialize_piece(piece: Piece) -> dict[str, JsonValue]:
+        return {
+            "id": piece.id,
+            "type": piece.type.name.lower(),
+            "color": piece.color.name.lower(),
+            "state": piece.state.name.lower(),
+            "position": GameSnapshotSerializer._serialize_position(
+                piece.position
+            ),
+        }
+
+    @staticmethod
+    def _serialize_motion(motion: Motion) -> dict[str, JsonValue]:
+        return {
+            "piece_id": motion.piece.id,
+            "source": GameSnapshotSerializer._serialize_position(
+                motion.source
+            ),
+            "target": GameSnapshotSerializer._serialize_position(
+                motion.target
+            ),
+            "current_position": GameSnapshotSerializer._serialize_position(
+                motion.current_position
+            ),
+            "duration": motion.duration,
+            "elapsed_time": motion.elapsed_time,
+        }
+
+    @staticmethod
+    def _serialize_scores(
+        game_engine: GameEngine,
+    ) -> dict[str, JsonValue]:
+        return {
+            color.name.lower(): game_engine.player_activity.get_score(color)
+            for color in PieceColor
+        }
+
+    @staticmethod
+    def _serialize_position(position: Position) -> dict[str, JsonValue]:
+        return {"row": position.row, "column": position.column}
+
+    @staticmethod
+    def _serialize_color(color: PieceColor | None) -> str | None:
+        if color is None:
+            return None
+        return color.name.lower()
+
+======================================================================
+FILE: network/multiplayer_controller.py
+======================================================================
+"""UI command adapter for a server-authoritative multiplayer game."""
+
+from errors.user_input_errors import ClickEmptySourceError, ClickOutsideBoardError
+from model.position import Position
+from network.network_client import NetworkClient
+from network.remote_game_state import RemoteGameState
+
+
+class MultiplayerController:
+    """Translates board input into network commands without local game rules."""
+
+    def __init__(
+        self,
+        game_state: RemoteGameState,
+        network_client: NetworkClient,
+    ) -> None:
+        self._game_state = game_state
+        self._network_client = network_client
+        self._selected_position: Position | None = None
+        self._selected_piece_id: int | None = None
+
+    @property
+    def selected_position(self) -> Position | None:
+        self._clear_invalid_selection()
+        return self._selected_position
+
+    def handle_position(self, position: Position) -> None:
+        """Select a source or send a move request to the server."""
+        if not self._game_state.is_inside(position):
+            self._clear_selection()
+            raise ClickOutsideBoardError()
+
+        if self._selected_position is None:
+            if not self._game_state.has_piece(position):
+                raise ClickEmptySourceError()
+            piece = self._game_state.get_piece(position)
+            self._selected_position = position
+            self._selected_piece_id = piece.id if piece is not None else None
+            self._game_state.clear_legal_moves()
+            self._network_client.request_legal_moves(position)
+            return
+
+        selected_piece = self._game_state.get_piece(self._selected_position)
+        target_piece = self._game_state.get_piece(position)
+        if (
+            selected_piece is not None
+            and target_piece is not None
+            and selected_piece.color is target_piece.color
+        ):
+            self._selected_position = position
+            self._selected_piece_id = target_piece.id
+            self._game_state.clear_legal_moves()
+            self._network_client.request_legal_moves(position)
+            return
+
+        source = self._selected_position
+        self._clear_selection()
+        self._network_client.send_move(source, position)
+
+    def jump_at(self, position: Position) -> None:
+        """Send a jump request without applying it locally."""
+        self._network_client.send_jump(position)
+
+    def deselect(self) -> None:
+        """Clear the current local selection."""
+        self._clear_selection()
+
+    def _clear_invalid_selection(self) -> None:
+        selected = self._selected_position
+        if selected is None:
+            return
+        piece = self._game_state.get_piece(selected)
+        assigned_color = self._network_client.assigned_color
+        if (
+            piece is not None
+            and piece.id == self._selected_piece_id
+            and piece.color is assigned_color
+        ):
+            return
+        self._clear_selection()
+
+    def _clear_selection(self) -> None:
+        self._selected_position = None
+        self._selected_piece_id = None
+        self._game_state.clear_legal_moves()
+
+======================================================================
+FILE: network/network_client.py
+======================================================================
+"""Thread-safe WebSocket client for the local multiplayer server."""
+
+import asyncio
+from concurrent.futures import Future
+import json
+import queue
+import threading
+from enum import Enum
+from typing import Any
+
+from model.piece import PieceColor
+from model.position import Position
+from websockets.asyncio.client import ClientConnection, connect
+
+
+class NetworkClientError(RuntimeError):
+    """Reports connection failures without exposing transport internals."""
+
+
+class MultiplayerClientState(Enum):
+    """Client presentation state; the server remains authoritative."""
+
+    IDLE = "idle"
+    SEARCHING = "searching"
+    ROOM_WAITING = "room_waiting"
+    MATCHED = "matched"
+    IN_GAME = "in_game"
+    SPECTATING = "spectating"
+
+
+class NetworkClient:
+    """Owns one background WebSocket connection and its message queues."""
+
+    def __init__(
+        self,
+        uri: str = "ws://127.0.0.1:8765",
+        connection_timeout: float = 5.0,
+    ) -> None:
+        self._uri = uri
+        self._connection_timeout = connection_timeout
+        self._messages: queue.Queue[dict[str, Any]] = queue.Queue()
+        self._authentication_responses: queue.Queue[dict[str, Any]] = queue.Queue()
+        self._connected = threading.Event()
+        self._ready = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._connection: ClientConnection | None = None
+        self._assigned_color: PieceColor | None = None
+        self._initial_snapshot: dict[str, Any] | None = None
+        self._connection_error: str | None = None
+        self._username: str | None = None
+        self._rating: int | None = None
+        self._matchmaking_state = MultiplayerClientState.IDLE
+        self._match_found: dict[str, Any] | None = None
+        self._resume_token: str | None = None
+        self._intentional_disconnect = False
+        self._resume_completed = False
+        self._player_profiles: dict[str, Any] | None = None
+
+    @property
+    def assigned_color(self) -> PieceColor | None:
+        """Return the color assigned by the server after connection."""
+        return self._assigned_color
+
+    @property
+    def initial_snapshot(self) -> dict[str, Any] | None:
+        """Return the first authoritative snapshot received from the server."""
+        return self._initial_snapshot
+
+    @property
+    def is_connected(self) -> bool:
+        """Return whether the background transport is currently connected."""
+        return self._connected.is_set()
+
+    @property
+    def username(self) -> str | None:
+        """Return the authenticated username, if login succeeded."""
+        return self._username
+
+    @property
+    def rating(self) -> int | None:
+        """Return the rating supplied by the server at login."""
+        return self._rating
+
+    @property
+    def matchmaking_state(self) -> MultiplayerClientState:
+        """Return the latest state acknowledged by the server."""
+        return self._matchmaking_state
+
+    @property
+    def match_found(self) -> dict[str, Any] | None:
+        """Return the latest authoritative match payload, if any."""
+        return self._match_found
+
+    @property
+    def player_profiles(self) -> dict[str, Any] | None:
+        """Return the latest authoritative profiles message."""
+        return self._player_profiles
+
+    def connect(self) -> None:
+        """Open the transport; authentication is performed separately."""
+        if self._thread is not None and self._thread.is_alive():
+            return
+
+        self._reset_connection_state()
+        self._intentional_disconnect = False
+        self._thread = threading.Thread(
+            target=self._run_background_loop,
+            name="kung-fu-chess-network-client",
+            daemon=True,
+        )
+        self._thread.start()
+        if not self._connected.wait(self._connection_timeout):
+            self.disconnect()
+            raise NetworkClientError("Timed out waiting for the game server.")
+        if self._connection_error is not None:
+            self.disconnect()
+            raise NetworkClientError(self._connection_error)
+
+    def register(self, username: str, password: str) -> dict[str, Any]:
+        """Send registration credentials and return the structured response."""
+        return self._authenticate("register", username, password)
+
+    def login(self, username: str, password: str) -> dict[str, Any]:
+        """Authenticate; joining a game is an explicit later user action."""
+        return self._authenticate("login", username, password)
+
+    def start_matchmaking(self) -> Future[None]:
+        """Ask the server to queue this authenticated user."""
+        if self._matchmaking_state is not MultiplayerClientState.IDLE:
+            raise NetworkClientError("The client is already matchmaking or in a game.")
+        self._matchmaking_state = MultiplayerClientState.SEARCHING
+        try:
+            return self.send({"type": "start_matchmaking"})
+        except Exception:
+            self._matchmaking_state = MultiplayerClientState.IDLE
+            raise
+
+    def cancel_matchmaking(self) -> Future[None]:
+        """Ask the server to remove this user from the queue."""
+        return self.send({"type": "cancel_matchmaking"})
+
+    def create_room(self) -> Future[None]:
+        """Request a new server-owned private room."""
+        if self._matchmaking_state is not MultiplayerClientState.IDLE:
+            raise NetworkClientError("The client is not idle.")
+        return self.send({"type": "create_room"})
+
+    def join_room(self, room_code: str) -> Future[None]:
+        """Request entry to a private room by its short code."""
+        if self._matchmaking_state is not MultiplayerClientState.IDLE:
+            raise NetworkClientError("The client is not idle.")
+        return self.send({"type": "join_room", "room_code": room_code})
+
+    def cancel_room(self) -> Future[None]:
+        """Close the private room currently owned by this client."""
+        return self.send({"type": "cancel_room"})
+
+    def list_spectatable_games(self) -> Future[None]:
+        """Request active games available for read-only viewing."""
+        return self.send({"type": "list_spectatable_games"})
+
+    def spectate_game(self, game_id: str) -> Future[None]:
+        """Request read-only access to an active game."""
+        return self.send({"type": "spectate_game", "game_id": game_id})
+
+    def stop_spectating(self) -> Future[None]:
+        """Leave a spectator view without affecting the game."""
+        return self.send({"type": "stop_spectating"})
+
+    def send(self, message: dict[str, object]) -> Future[None]:
+        """Schedule one JSON-safe message for transmission to the server."""
+        loop = self._loop
+        if loop is None or not self.is_connected:
+            raise NetworkClientError("The multiplayer client is not connected.")
+        return asyncio.run_coroutine_threadsafe(
+            self._send_message(message),
+            loop,
+        )
+
+    def send_move(self, source: Position, target: Position) -> Future[None]:
+        """Send a move command using the shared network message format."""
+        return self.send(
+            {
+                "type": "move",
+                "source": self._serialize_position(source),
+                "target": self._serialize_position(target),
+            }
+        )
+
+    def send_jump(self, position: Position) -> Future[None]:
+        """Send a jump command using the shared network message format."""
+        return self.send(
+            {
+                "type": "jump",
+                "position": self._serialize_position(position),
+            }
+        )
+
+    def request_legal_moves(self, position: Position) -> Future[None]:
+        """Request authoritative legal destinations for one selected piece."""
+        return self.send(
+            {
+                "type": "legal_moves",
+                "position": self._serialize_position(position),
+            }
+        )
+
+    def receive(self, timeout: float | None = None) -> dict[str, Any]:
+        """Return the next server message from the thread-safe inbound queue."""
+        return self._messages.get(timeout=timeout)
+
+    def poll_messages(self) -> tuple[dict[str, Any], ...]:
+        """Drain messages for safe processing by the caller's UI thread."""
+        messages = []
+        while True:
+            try:
+                messages.append(self._messages.get_nowait())
+            except queue.Empty:
+                return tuple(messages)
+
+    def disconnect(self) -> None:
+        """Close the WebSocket connection and stop its background thread."""
+        self._intentional_disconnect = True
+        loop = self._loop
+        connection = self._connection
+        if loop is not None and connection is not None and loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(connection.close(), loop)
+            try:
+                future.result(timeout=self._connection_timeout)
+            except Exception:
+                pass
+
+        thread = self._thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=self._connection_timeout)
+        self._connected.clear()
+        self._thread = None
+
+    def _run_background_loop(self) -> None:
+        try:
+            asyncio.run(self._connection_loop())
+        except Exception:
+            self._connection_error = "Unable to connect to the game server."
+            self._ready.set()
+        finally:
+            self._connected.clear()
+            self._connection = None
+            self._loop = None
+
+    async def _connection_loop(self) -> None:
+        self._loop = asyncio.get_running_loop()
+        reconnect_deadline: float | None = None
+        while not self._intentional_disconnect:
+            try:
+                async with connect(self._uri, proxy=None) as connection:
+                    self._connection = connection
+                    self._connected.set()
+                    if reconnect_deadline is not None and self._resume_token is not None:
+                        await connection.send(
+                            json.dumps(
+                                {"type": "resume_session", "token": self._resume_token}
+                            )
+                        )
+                    async for raw_message in connection:
+                        self._receive_message(raw_message)
+            except Exception:
+                if reconnect_deadline is None:
+                    raise
+            finally:
+                self._connected.clear()
+                self._connection = None
+            if self._intentional_disconnect or self._resume_token is None:
+                return
+            if self._resume_completed:
+                reconnect_deadline = None
+                self._resume_completed = False
+            if reconnect_deadline is None:
+                reconnect_deadline = self._loop.time() + 20.0
+                self._messages.put({"type": "connection_lost"})
+            if self._loop.time() >= reconnect_deadline:
+                self._messages.put({"type": "session_resume_rejected", "reason": "timeout"})
+                return
+            await asyncio.sleep(0.5)
+
+    async def _send_message(self, message: dict[str, object]) -> None:
+        connection = self._connection
+        if connection is None:
+            raise NetworkClientError("The multiplayer client is not connected.")
+        await connection.send(json.dumps(message))
+
+    def _receive_message(self, raw_message: str | bytes) -> None:
+        try:
+            message = json.loads(raw_message)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            message = {"type": "server_error"}
+
+        if not isinstance(message, dict):
+            message = {"type": "server_error"}
+        self._capture_handshake(message)
+        self._messages.put(message)
+
+    def _capture_handshake(self, message: dict[str, Any]) -> None:
+        message_type = message.get("type")
+        if message_type in {
+            "registration_success",
+            "login_success",
+            "username_taken",
+            "invalid_credentials",
+            "validation_error",
+            "server_error",
+            "connection_rejected",
+        }:
+            if message_type == "login_success":
+                self._username = str(message.get("username"))
+                rating = message.get("rating")
+                self._rating = rating if type(rating) is int else None
+            self._authentication_responses.put(message)
+        if message_type == "connection_accepted":
+            color = message.get("color")
+            try:
+                self._assigned_color = PieceColor[str(color).upper()]
+            except KeyError:
+                self._connection_error = "Server returned an invalid color."
+                self._ready.set()
+            self._matchmaking_state = MultiplayerClientState.IN_GAME
+        elif message_type == "connection_rejected":
+            reason = str(message.get("reason", "connection_rejected"))
+            self._connection_error = f"Server rejected connection: {reason}."
+            self._ready.set()
+        elif message_type == "game_snapshot":
+            state = message.get("state")
+            if isinstance(state, dict):
+                self._initial_snapshot = state
+                self._ready.set()
+        elif message_type == "rating_updated" and self._assigned_color is not None:
+            for profile in message.get("players", []):
+                if profile.get("color") == self._assigned_color.name.lower():
+                    rating = profile.get("rating")
+                    if type(rating) is int:
+                        self._rating = rating
+        elif message_type == "matchmaking_queued":
+            self._matchmaking_state = MultiplayerClientState.SEARCHING
+            rating = message.get("rating")
+            if type(rating) is int:
+                self._rating = rating
+        elif message_type == "matchmaking_canceled":
+            self._matchmaking_state = MultiplayerClientState.IDLE
+        elif message_type == "match_found":
+            self._matchmaking_state = MultiplayerClientState.MATCHED
+            self._match_found = message
+        elif message_type == "room_created":
+            self._matchmaking_state = MultiplayerClientState.ROOM_WAITING
+        elif message_type == "room_closed":
+            self._matchmaking_state = MultiplayerClientState.IDLE
+        elif message_type == "spectating_started":
+            self._matchmaking_state = MultiplayerClientState.SPECTATING
+        elif message_type == "spectating_stopped":
+            self._matchmaking_state = MultiplayerClientState.IDLE
+        elif message_type == "player_profiles":
+            self._player_profiles = message
+        elif message_type == "session_resume_token":
+            token = message.get("token")
+            if isinstance(token, str):
+                self._resume_token = token
+        elif message_type == "session_resumed":
+            color = message.get("color")
+            try:
+                self._assigned_color = PieceColor[str(color).upper()]
+            except KeyError:
+                return
+            self._matchmaking_state = MultiplayerClientState.IN_GAME
+            self._resume_completed = True
+
+    def _reset_connection_state(self) -> None:
+        self._connected.clear()
+        self._ready.clear()
+        self._assigned_color = None
+        self._initial_snapshot = None
+        self._connection_error = None
+        self._username = None
+        self._rating = None
+        self._matchmaking_state = MultiplayerClientState.IDLE
+        self._match_found = None
+        self._player_profiles = None
+        self._resume_token = None
+        while not self._authentication_responses.empty():
+            try:
+                self._authentication_responses.get_nowait()
+            except queue.Empty:
+                break
+
+    def _authenticate(
+        self,
+        action: str,
+        username: str,
+        password: str,
+    ) -> dict[str, Any]:
+        self.send(
+            {
+                "type": action,
+                "username": username,
+                "password": password,
+            }
+        ).result(timeout=self._connection_timeout)
+        try:
+            return self._authentication_responses.get(
+                timeout=self._connection_timeout
+            )
+        except queue.Empty as error:
+            raise NetworkClientError(
+                "Timed out waiting for authentication response."
+            ) from error
+
+    @staticmethod
+    def _serialize_position(position: Position) -> dict[str, int]:
+        return {"row": position.row, "column": position.column}
+
+======================================================================
+FILE: network/reconnect_session_service.py
+======================================================================
+"""Connection-independent ownership for resumable multiplayer sessions."""
+
+from dataclasses import dataclass
+from enum import Enum
+import secrets
+import threading
+import time
+from collections.abc import Callable
+
+from authentication.user import User
+from model.piece import PieceColor
+
+
+class ParticipantConnectionState(Enum):
+    """Server-side connectivity state for a matched participant."""
+
+    CONNECTED = "connected"
+    DISCONNECTED_WAITING = "disconnected_waiting"
+    FORFEITED = "forfeited"
+
+
+@dataclass
+class GameParticipant:
+    """Mutable server-only connection data for one immutable game identity."""
+
+    user: User
+    color: PieceColor
+    connection: object | None
+    token: str
+    state: ParticipantConnectionState = ParticipantConnectionState.CONNECTED
+    disconnect_deadline: float | None = None
+
+
+@dataclass(frozen=True)
+class DisconnectNotice:
+    """Facts needed to notify an opponent and schedule expiry."""
+
+    game_id: str
+    user: User
+    color: PieceColor
+    deadline: float
+    opponent_connection: object | None
+
+
+@dataclass(frozen=True)
+class ResumeResult:
+    """Validated attachment of a new connection to an existing participant."""
+
+    game_id: str
+    user: User
+    color: PieceColor
+    token: str
+    opponent_connection: object | None
+
+
+@dataclass(frozen=True)
+class ExpiryResult:
+    """Idempotent terminal result produced by one expired deadline."""
+
+    game_id: str
+    loser: User | None
+    winner: User | None
+    winner_color: PieceColor | None
+    connections: tuple[object, ...]
+
+
+class ReconnectSessionService:
+    """Owns resume tokens, participant connections, and reconnect deadlines."""
+
+    def __init__(
+        self,
+        timeout_seconds: float = 20.0,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        self.timeout_seconds = timeout_seconds
+        self._clock = clock
+        self._game_id: str | None = None
+        self._participants: dict[int, GameParticipant] = {}
+        self._user_by_connection: dict[object, int] = {}
+        self._user_by_token: dict[str, int] = {}
+        self._completed = False
+        self._lock = threading.RLock()
+
+    def create_game(
+        self,
+        game_id: str,
+        participants: tuple[tuple[object, User, PieceColor], ...],
+    ) -> dict[object, str]:
+        """Register one active game and issue opaque tokens to both clients."""
+        with self._lock:
+            self._game_id = game_id
+            self._participants.clear()
+            self._user_by_connection.clear()
+            self._user_by_token.clear()
+            self._completed = False
+            tokens: dict[object, str] = {}
+            for connection, user, color in participants:
+                token = secrets.token_urlsafe(32)
+                participant = GameParticipant(user, color, connection, token)
+                self._participants[user.id] = participant
+                self._user_by_connection[connection] = user.id
+                self._user_by_token[token] = user.id
+                tokens[connection] = token
+            return tokens
+
+    def disconnect(self, connection: object) -> DisconnectNotice | None:
+        """Mark the current participant connection as temporarily absent."""
+        with self._lock:
+            user_id = self._user_by_connection.pop(connection, None)
+            if user_id is None or self._completed or self._game_id is None:
+                return None
+            participant = self._participants[user_id]
+            if participant.connection is not connection:
+                return None
+            deadline = self._clock() + self.timeout_seconds
+            participant.connection = None
+            participant.state = ParticipantConnectionState.DISCONNECTED_WAITING
+            participant.disconnect_deadline = deadline
+            opponent = self._opponent(user_id)
+            return DisconnectNotice(
+                self._game_id,
+                participant.user,
+                participant.color,
+                deadline,
+                opponent.connection if opponent is not None else None,
+            )
+
+    def resume(self, connection: object, token: object) -> ResumeResult | None:
+        """Validate an opaque token and atomically attach a replacement socket."""
+        if not isinstance(token, str):
+            return None
+        with self._lock:
+            user_id = self._user_by_token.get(token)
+            if user_id is None or self._completed or self._game_id is None:
+                return None
+            participant = self._participants[user_id]
+            deadline = participant.disconnect_deadline
+            if (
+                participant.state is not ParticipantConnectionState.DISCONNECTED_WAITING
+                or deadline is None
+                or self._clock() > deadline
+                or participant.connection is not None
+            ):
+                return None
+            self._user_by_token.pop(token, None)
+            rotated_token = secrets.token_urlsafe(32)
+            participant.token = rotated_token
+            participant.connection = connection
+            participant.state = ParticipantConnectionState.CONNECTED
+            participant.disconnect_deadline = None
+            self._user_by_token[rotated_token] = user_id
+            self._user_by_connection[connection] = user_id
+            opponent = self._opponent(user_id)
+            return ResumeResult(
+                self._game_id,
+                participant.user,
+                participant.color,
+                rotated_token,
+                opponent.connection if opponent is not None else None,
+            )
+
+    def expire(self, user_id: int, deadline: float) -> ExpiryResult | None:
+        """Finalize a still-current deadline once; stale callbacks are harmless."""
+        with self._lock:
+            participant = self._participants.get(user_id)
+            if participant is None or self._completed:
+                return None
+            if (
+                participant.state is not ParticipantConnectionState.DISCONNECTED_WAITING
+                or participant.disconnect_deadline != deadline
+                or self._clock() < deadline
+            ):
+                return None
+            opponent = self._opponent(user_id)
+            self._completed = True
+            participant.state = ParticipantConnectionState.FORFEITED
+            connections = tuple(
+                item.connection
+                for item in self._participants.values()
+                if item.connection is not None
+            )
+            if opponent is None or opponent.connection is None:
+                return ExpiryResult(self._game_id or "", None, None, None, connections)
+            return ExpiryResult(
+                self._game_id or "",
+                participant.user,
+                opponent.user,
+                opponent.color,
+                connections,
+            )
+
+    def is_paused(self) -> bool:
+        with self._lock:
+            return any(
+                participant.state is ParticipantConnectionState.DISCONNECTED_WAITING
+                for participant in self._participants.values()
+            )
+
+    def participant_for_connection(self, connection: object) -> GameParticipant | None:
+        with self._lock:
+            user_id = self._user_by_connection.get(connection)
+            return self._participants.get(user_id) if user_id is not None else None
+
+    def cleanup(self) -> None:
+        """Invalidate all tokens and release completed session references."""
+        with self._lock:
+            self._participants.clear()
+            self._user_by_connection.clear()
+            self._user_by_token.clear()
+            self._game_id = None
+
+    def _opponent(self, user_id: int) -> GameParticipant | None:
+        return next(
+            (item for key, item in self._participants.items() if key != user_id),
+            None,
+        )
+
+======================================================================
+FILE: network/remote_game_state.py
+======================================================================
+"""Read-only UI state reconstructed from authoritative server snapshots."""
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import json
+from typing import Any
+
+from common.time import utc_now
+from config.constants import EMPTY_SQUARE
+from game.player_activity_service import PlayerAction
+from model.board import Board
+from model.piece import Piece, PieceColor, PieceState, PieceType
+from model.position import Position
+from network.network_client import NetworkClient
+
+
+class RemotePlayerActivity:
+    """Provides snapshot scores through the existing renderer-facing API."""
+
+    def __init__(self) -> None:
+        self._scores = {color: 0 for color in PieceColor}
+        self._actions: dict[PieceColor, list[PlayerAction]] = {
+            color: [] for color in PieceColor
+        }
+        self._profiles: dict[PieceColor, tuple[str, int, bool]] = {}
+
+    def update_scores(self, scores: dict[str, object]) -> None:
+        """Replace displayed scores with authoritative snapshot values."""
+        for color in PieceColor:
+            score = scores.get(color.name.lower())
+            if type(score) is int:
+                self._scores[color] = score
+
+    def get_score(self, player: PieceColor) -> int:
+        """Return the latest authoritative score for a player."""
+        return self._scores[player]
+
+    def get_actions(self, player: PieceColor) -> tuple[PlayerAction, ...]:
+        """Return an immutable snapshot of server-derived activity."""
+        return tuple(self._actions[player])
+
+    def record_action(self, player: PieceColor, description: str) -> None:
+        """Append one presentation-only action derived from a game event."""
+        self._actions[player].append(
+            PlayerAction(
+                player=player,
+                description=description,
+                occurred_at=utc_now(),
+            )
+        )
+
+    def set_profile(
+        self,
+        color: PieceColor,
+        username: str,
+        rating: int,
+        is_local: bool = False,
+    ) -> None:
+        """Set the authenticated profile displayed for the local color."""
+        self._profiles[color] = (username, rating, is_local)
+
+    def get_profile(self, color: PieceColor) -> tuple[str, int, bool] | None:
+        """Return display profile data for a color, if known."""
+        return self._profiles.get(color)
+
+
+@dataclass(frozen=True)
+class RemoteMotion:
+    """Rendering data for one active motion from a server snapshot."""
+
+    piece: Piece
+    source: Position
+    target: Position
+    current_position: Position
+    duration: int
+    elapsed_time: int
+
+
+class RemoteGameState:
+    """Applies server snapshots without running authoritative game logic."""
+
+    def __init__(self, network_client: NetworkClient) -> None:
+        self._network_client = network_client
+        self._board = Board([])
+        self._pieces_by_id: dict[int, Piece] = {}
+        self._motions: tuple[RemoteMotion, ...] = ()
+        self._player_activity = RemotePlayerActivity()
+        self._game_over = False
+        self._winner: PieceColor | None = None
+        self._last_event: dict[str, Any] | None = None
+        self._last_response: dict[str, Any] | None = None
+        self._legal_moves_source: Position | None = None
+        self._legal_moves: set[Position] = set()
+        self._seen_event_keys: set[tuple[str, object]] = set()
+        self._pending_match_started_message: str | None = None
+        self._match_started_received = False
+        self._disconnect_username: str | None = None
+        self._disconnect_deadline: datetime | None = None
+        self._disconnect_notice: str | None = None
+        self._spectator_view_closed = False
+
+    @property
+    def board(self) -> Board:
+        """Return the latest board reconstructed on the UI thread."""
+        return self._board
+
+    @property
+    def player_activity(self) -> RemotePlayerActivity:
+        """Return renderer-facing authoritative score data."""
+        return self._player_activity
+
+    @property
+    def game_over(self) -> bool:
+        """Return the latest authoritative terminal-state flag."""
+        return self._game_over
+
+    @property
+    def last_event(self) -> dict[str, Any] | None:
+        """Return the most recently received game-event message."""
+        return self._last_event
+
+    @property
+    def last_response(self) -> dict[str, Any] | None:
+        """Return the latest command or server response."""
+        return self._last_response
+
+    def wait(self, _milliseconds: int) -> None:
+        """Apply queued server messages; never advance a local simulation."""
+        for message in self._network_client.poll_messages():
+            self.apply_message(message)
+
+    def apply_message(self, message: dict[str, Any]) -> None:
+        """Apply one server message on the calling UI thread."""
+        message_type = message.get("type")
+        if message_type == "game_snapshot":
+            state = message.get("state")
+            if isinstance(state, dict):
+                self._apply_snapshot(state)
+        elif message_type == "game_event":
+            self._apply_game_event(message)
+        elif message_type == "legal_moves":
+            self._apply_legal_moves(message)
+        elif message_type in {"match_found", "player_profiles", "rating_updated"}:
+            self._apply_player_profiles(
+                message,
+                show_match_dialog=message_type in {"match_found", "player_profiles"},
+            )
+        elif message_type in {
+            "command_accepted",
+            "command_rejected",
+            "server_error",
+        }:
+            self._last_response = message
+        elif message_type == "opponent_disconnected":
+            self.clear_legal_moves()
+            self._disconnect_username = str(message.get("username", "Opponent"))
+            try:
+                self._disconnect_deadline = datetime.fromisoformat(str(message["deadline"]))
+            except (KeyError, ValueError):
+                self._disconnect_deadline = None
+            self._disconnect_notice = None
+        elif message_type == "opponent_reconnected":
+            self._disconnect_username = None
+            self._disconnect_deadline = None
+            self._disconnect_notice = "Opponent reconnected"
+        elif message_type == "connection_lost":
+            self.clear_legal_moves()
+            self._disconnect_notice = "Connection lost - reconnecting..."
+        elif message_type == "session_resumed":
+            self.clear_legal_moves()
+            self._disconnect_notice = None
+        elif message_type == "disconnect_forfeit":
+            self.clear_legal_moves()
+            self._disconnect_username = None
+            self._disconnect_deadline = None
+            winner = message.get("winner")
+            self._disconnect_notice = (
+                f"{winner} wins by disconnect forfeit" if winner else "Game ended"
+            )
+        elif message_type == "spectating_stopped":
+            self._spectator_view_closed = True
+
+    def should_close_spectator_view(self) -> bool:
+        """Return whether the server ended this spectator view."""
+        return self._spectator_view_closed
+
+    def disconnect_overlay_message(self) -> str | None:
+        """Return current presentation text using the server deadline."""
+        if self._disconnect_username is None:
+            return self._disconnect_notice
+        remaining = 0
+        if self._disconnect_deadline is not None:
+            remaining = max(
+                0,
+                int((self._disconnect_deadline - datetime.now(timezone.utc)).total_seconds()) + 1,
+            )
+        return (
+            f"Opponent disconnected\nWaiting for {self._disconnect_username} "
+            f"to reconnect...\n{remaining} seconds remaining"
+        )
+
+    def is_inside(self, position: Position) -> bool:
+        return self._board.is_inside(position)
+
+    def has_piece(self, position: Position) -> bool:
+        if not self.is_inside(position):
+            return False
+        return isinstance(self._board.get_piece(position), Piece)
+
+    def get_piece(self, position: Position) -> Piece | None:
+        if not self.is_inside(position):
+            return None
+        piece = self._board.get_piece(position)
+        return piece if isinstance(piece, Piece) else None
+
+    def get_motions(self) -> tuple[RemoteMotion, ...]:
+        return self._motions
+
+    def get_legal_moves(self, source: Position) -> set[Position]:
+        """Return destinations supplied by the server for this source."""
+        if source != self._legal_moves_source:
+            return set()
+        return set(self._legal_moves)
+
+    def clear_legal_moves(self) -> None:
+        """Clear destination markers after selection state changes."""
+        self._legal_moves_source = None
+        self._legal_moves.clear()
+
+    def set_local_profile(
+        self,
+        color: PieceColor | None,
+        username: str | None,
+        rating: int | None,
+    ) -> None:
+        """Attach the authenticated identity to its assigned color panel."""
+        if color is None or username is None or rating is None:
+            return
+        self._player_activity.set_profile(color, username, rating, is_local=True)
+
+    def consume_match_started_message(self) -> str | None:
+        """Return the pending match dialog text exactly once."""
+        message = self._pending_match_started_message
+        self._pending_match_started_message = None
+        return message
+
+    def get_winner(self) -> PieceColor | None:
+        return self._winner
+
+    def get_board(self) -> Board:
+        return self._board
+
+    def _apply_snapshot(self, snapshot: dict[str, Any]) -> None:
+        board_data = snapshot["board"]
+        width = board_data["width"]
+        height = board_data["height"]
+        rows = [[EMPTY_SQUARE for _ in range(width)] for _ in range(height)]
+
+        for piece_data in board_data["pieces"]:
+            piece = self._piece_from_data(piece_data)
+            rows[piece.position.row][piece.position.column] = piece
+
+        self._board = Board(rows)
+        self._motions = tuple(
+            self._motion_from_data(motion_data)
+            for motion_data in snapshot["motions"]
+        )
+        self._player_activity.update_scores(snapshot["scores"])
+        self._game_over = bool(snapshot["game_over"])
+        winner = snapshot["winner"]
+        self._winner = (
+            PieceColor[str(winner).upper()]
+            if winner is not None
+            else None
+        )
+        self._clear_legal_moves_if_source_changed()
+
+    def _apply_legal_moves(self, message: dict[str, Any]) -> None:
+        source = self._position(message["source"])
+        positions = {
+            self._position(position)
+            for position in message["positions"]
+        }
+        self._legal_moves_source = source
+        self._legal_moves = positions
+
+    def _apply_player_profiles(
+        self,
+        message: dict[str, Any],
+        show_match_dialog: bool,
+    ) -> None:
+        lines = []
+        for profile in message.get("players", []):
+            color = PieceColor[str(profile["color"]).upper()]
+            username = str(profile["username"])
+            rating = int(profile["rating"])
+            self._player_activity.set_profile(
+                color,
+                username,
+                rating,
+                is_local=color is self._network_client.assigned_color,
+            )
+            lines.append(f"{color.name.title()}: {username} ({rating})")
+        if (
+            show_match_dialog
+            and len(lines) == 2
+            and not self._match_started_received
+        ):
+            self._match_started_received = True
+            self._pending_match_started_message = "\n".join(lines)
+
+    def _apply_game_event(self, message: dict[str, Any]) -> None:
+        event_key = self._event_key(message)
+        if event_key in self._seen_event_keys:
+            return
+        self._seen_event_keys.add(event_key)
+        self._last_event = message
+        event = message.get("event")
+        if not isinstance(event, dict):
+            return
+
+        event_type = event.get("type")
+        try:
+            if event_type == "move_started":
+                self._record_move_event(event)
+            elif event_type == "jump_started":
+                self._record_jump_event(event)
+            elif event_type == "score_changed":
+                self._record_score_event(event)
+            elif event_type == "game_over":
+                self._record_game_over_event(event)
+        except (KeyError, TypeError, ValueError):
+            return
+
+    def _record_move_event(self, event: dict[str, Any]) -> None:
+        piece = self._pieces_by_id.get(int(event["piece_id"]))
+        if piece is None:
+            return
+        source = self._position(event["source"])
+        target = self._position(event["target"])
+        self._player_activity.record_action(
+            piece.color,
+            (
+                f"{piece.type.name.title()} "
+                f"{self._format_position(source)} -> "
+                f"{self._format_position(target)}"
+            ),
+        )
+
+    def _record_jump_event(self, event: dict[str, Any]) -> None:
+        piece = self._pieces_by_id.get(int(event["piece_id"]))
+        if piece is None:
+            return
+        position = self._position(event["position"])
+        self._player_activity.record_action(
+            piece.color,
+            (
+                f"{piece.type.name.title()} jumps at "
+                f"{self._format_position(position)}"
+            ),
+        )
+
+    def _record_score_event(self, event: dict[str, Any]) -> None:
+        player = PieceColor[str(event["player"]).upper()]
+        score = int(event["score"])
+        self._player_activity.update_scores({player.name.lower(): score})
+        self._player_activity.record_action(
+            player,
+            f"Capture - score: {score}",
+        )
+
+    def _record_game_over_event(self, event: dict[str, Any]) -> None:
+        winner_value = event.get("winner")
+        if winner_value is None:
+            for player in PieceColor:
+                self._player_activity.record_action(player, "Game over")
+            return
+        winner = PieceColor[str(winner_value).upper()]
+        self._player_activity.record_action(
+            winner,
+            f"Game over - {winner.name.title()} wins",
+        )
+
+    def _clear_legal_moves_if_source_changed(self) -> None:
+        source = self._legal_moves_source
+        if source is None:
+            return
+        if (
+            not self._board.is_inside(source)
+            or not isinstance(self._board.get_piece(source), Piece)
+        ):
+            self.clear_legal_moves()
+
+    @staticmethod
+    def _event_key(message: dict[str, Any]) -> tuple[str, object]:
+        event_id = message.get("event_id")
+        if type(event_id) is int:
+            return ("id", event_id)
+        return ("payload", json.dumps(message.get("event"), sort_keys=True))
+
+    @staticmethod
+    def _format_position(position: Position) -> str:
+        return f"{chr(ord('A') + position.column)}{8 - position.row}"
+
+    def _piece_from_data(self, data: dict[str, Any]) -> Piece:
+        piece_id = int(data["id"])
+        position = self._position(data["position"])
+        piece = self._pieces_by_id.get(piece_id)
+        if piece is None:
+            piece = Piece(
+                piece_id=piece_id,
+                piece_type=PieceType[str(data["type"]).upper()],
+                color=PieceColor[str(data["color"]).upper()],
+                position=position,
+            )
+            self._pieces_by_id[piece_id] = piece
+        piece.type = PieceType[str(data["type"]).upper()]
+        piece.position = position
+        piece.state = PieceState[str(data["state"]).upper()]
+        return piece
+
+    def _motion_from_data(self, data: dict[str, Any]) -> RemoteMotion:
+        piece = self._pieces_by_id[int(data["piece_id"])]
+        return RemoteMotion(
+            piece=piece,
+            source=self._position(data["source"]),
+            target=self._position(data["target"]),
+            current_position=self._position(data["current_position"]),
+            duration=int(data["duration"]),
+            elapsed_time=int(data["elapsed_time"]),
+        )
+
+    @staticmethod
+    def _position(data: dict[str, Any]) -> Position:
+        return Position(row=int(data["row"]), column=int(data["column"]))
+
+======================================================================
+FILE: network/server_logging.py
+======================================================================
+"""Structured, rotating, sensitive-data-safe server logging configuration."""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+from typing import Any
+
+
+_SENSITIVE_FRAGMENTS = ("password", "password_hash", "token", "resume_token")
+_STANDARD_RECORD_KEYS = set(logging.makeLogRecord({}).__dict__)
+
+
+class SensitiveDataFilter(logging.Filter):
+    """Redact sensitive mapping values before any handler formats a record."""
+
+    REDACTED = "[REDACTED]"
+    _INLINE_SECRET = re.compile(
+        r"(?i)(password(?:_hash)?|resume_token|token)\s*([=:])\s*([^\s,}]+)"
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = self._sanitize(record.msg)
+        record.args = self._sanitize(record.args)
+        for key, value in tuple(record.__dict__.items()):
+            if self._is_sensitive(key):
+                setattr(record, key, self.REDACTED)
+            elif key not in _STANDARD_RECORD_KEYS:
+                setattr(record, key, self._sanitize(value))
+        return True
+
+    @classmethod
+    def _sanitize(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: cls.REDACTED if cls._is_sensitive(str(key)) else cls._sanitize(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, tuple):
+            return tuple(cls._sanitize(item) for item in value)
+        if isinstance(value, list):
+            return [cls._sanitize(item) for item in value]
+        if isinstance(value, str):
+            return cls._INLINE_SECRET.sub(
+                lambda match: f"{match.group(1)}{match.group(2)}{cls.REDACTED}",
+                value,
+            )
+        return value
+
+    @staticmethod
+    def _is_sensitive(key: str) -> bool:
+        normalized = key.lower()
+        return any(fragment in normalized for fragment in _SENSITIVE_FRAGMENTS)
+
+
+class StructuredJsonFormatter(logging.Formatter):
+    """Render each server record as one machine-readable JSON object."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, Any] = {
+            "timestamp": self.formatTime(record, "%Y-%m-%dT%H:%M:%S%z"),
+            "level": record.levelname,
+            "logger": record.name,
+            "event": getattr(record, "event_type", record.getMessage()),
+            "message": record.getMessage(),
+        }
+        for key in ("game_id", "user_id", "username", "room_code", "reason"):
+            value = getattr(record, key, None)
+            if value is not None:
+                payload[key] = value
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+def configure_server_logging(
+    level: str = "INFO",
+    log_file: str | Path = "data/server.log",
+    max_bytes: int = 2_000_000,
+    backup_count: int = 5,
+) -> logging.Logger:
+    """Configure console and rotating-file handlers for the server namespace."""
+    numeric_level = getattr(logging, level.upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError(f"Unknown log level: {level}")
+    path = Path(log_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger("kung_fu_chess.server")
+    logger.handlers.clear()
+    logger.setLevel(numeric_level)
+    logger.propagate = False
+    formatter = StructuredJsonFormatter()
+    sensitive_filter = SensitiveDataFilter()
+    console = logging.StreamHandler()
+    rotating_file = RotatingFileHandler(
+        path,
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        encoding="utf-8",
+    )
+    for handler in (console, rotating_file):
+        handler.setLevel(numeric_level)
+        handler.setFormatter(formatter)
+        handler.addFilter(sensitive_filter)
+        logger.addHandler(handler)
+    return logger
+
+======================================================================
+FILE: network/server_main.py
+======================================================================
+"""Command-line entry point for the local two-player WebSocket server."""
+
+import argparse
+import asyncio
+from collections.abc import Sequence
+
+from authentication.authentication_service import AuthenticationService
+from authentication.sqlite_user_repository import SQLiteUserRepository
+from app.game_engine_factory import GameEngineFactory
+from network.game_server import GameServer
+from network.reconnect_session_service import ReconnectSessionService
+from network.server_logging import configure_server_logging
+from rating.elo_rating_service import EloRatingService
+from rating.persistent_rating_service import PersistentRatingService
+
+
+def main(arguments: Sequence[str] | None = None) -> None:
+    """Parse local server options and run one authoritative game."""
+    parser = argparse.ArgumentParser(description="Run the Kung Fu Chess server.")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", default=8765, type=int)
+    parser.add_argument("--database", default="data/users.db")
+    parser.add_argument("--k-factor", default=32, type=int)
+    parser.add_argument("--reconnect-timeout", default=20.0, type=float)
+    parser.add_argument("--log-level", default="INFO")
+    parser.add_argument("--log-file", default="data/server.log")
+    parser.add_argument("--log-max-bytes", default=2_000_000, type=int)
+    parser.add_argument("--log-backup-count", default=5, type=int)
+    options = parser.parse_args(arguments)
+    logger = configure_server_logging(
+        level=options.log_level,
+        log_file=options.log_file,
+        max_bytes=options.log_max_bytes,
+        backup_count=options.log_backup_count,
+    )
+    repository = SQLiteUserRepository(options.database)
+    authentication_service = AuthenticationService(repository)
+    authentication_service.initialize()
+    rating_service = PersistentRatingService(
+        repository,
+        EloRatingService(k_factor=options.k_factor),
+    )
+    server = GameServer(
+        GameEngineFactory.create(),
+        authentication_service=authentication_service,
+        rating_service=rating_service,
+        reconnect_service=ReconnectSessionService(options.reconnect_timeout),
+        logger=logger,
+    )
+    try:
+        asyncio.run(server.run(options.host, options.port))
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()
+
+======================================================================
+FILE: network/session_manager.py
+======================================================================
+"""Connection membership and piece-color ownership for one local game."""
+
+from model.piece import PieceColor
+
+
+class SessionManager:
+    """Assigns the two available colors to independent client identities."""
+
+    _COLOR_ORDER = (PieceColor.WHITE, PieceColor.BLACK)
+
+    def __init__(self) -> None:
+        self._colors_by_client: dict[object, PieceColor] = {}
+
+    def connect(self, client: object) -> PieceColor | None:
+        """Assign an available color, or return ``None`` when the game is full."""
+        existing_color = self._colors_by_client.get(client)
+        if existing_color is not None:
+            return existing_color
+
+        assigned_colors = set(self._colors_by_client.values())
+        for color in self._COLOR_ORDER:
+            if color not in assigned_colors:
+                self._colors_by_client[client] = color
+                return color
+        return None
+
+    def assign(self, client: object, color: PieceColor) -> bool:
+        """Assign a chosen color when matchmaking creates a game."""
+        existing = self._colors_by_client.get(client)
+        if existing is not None:
+            return existing is color
+        if color in self._colors_by_client.values():
+            return False
+        self._colors_by_client[client] = color
+        return True
+
+    def disconnect(self, client: object) -> None:
+        """Release the color assigned to a disconnected client."""
+        self._colors_by_client.pop(client, None)
+
+    def color_for(self, client: object) -> PieceColor | None:
+        """Return the client's assigned color, if connected."""
+        return self._colors_by_client.get(client)
+
+    def can_control(self, client: object, piece_color: PieceColor) -> bool:
+        """Return whether the client owns pieces of ``piece_color``."""
+        return self.color_for(client) is piece_color
+
+    @property
+    def clients(self) -> tuple[object, ...]:
+        """Return an immutable snapshot of accepted client identities."""
+        return tuple(self._colors_by_client)
+
+######################################################################
+SECTION: rating
+######################################################################
+
+======================================================================
+FILE: rating/__init__.py
+======================================================================
+"""ELO calculation and persistent multiplayer rating updates."""
+
+from rating.elo_rating_service import EloRatingService, EloResult
+from rating.persistent_rating_service import PersistentRatingService, RatingUpdate
+
+__all__ = [
+    "EloRatingService",
+    "EloResult",
+    "PersistentRatingService",
+    "RatingUpdate",
+]
+
+======================================================================
+FILE: rating/elo_rating_service.py
+======================================================================
+"""Pure standard ELO rating calculation."""
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class EloResult:
+    """New ratings and the zero-sum change for a decisive result."""
+
+    winner_rating: int
+    loser_rating: int
+    rating_change: int
+
+
+class EloRatingService:
+    """Calculates decisive-game ratings with a configurable K-factor."""
+
+    def __init__(self, k_factor: int = 32) -> None:
+        if k_factor <= 0:
+            raise ValueError("K-factor must be positive.")
+        self._k_factor = k_factor
+
+    @property
+    def k_factor(self) -> int:
+        """Return the configured maximum rating adjustment."""
+        return self._k_factor
+
+    def calculate(self, winner_rating: int, loser_rating: int) -> EloResult:
+        """Return zero-sum ELO updates for a winner and loser."""
+        expected_winner = 1 / (
+            1 + 10 ** ((loser_rating - winner_rating) / 400)
+        )
+        rating_change = round(self._k_factor * (1 - expected_winner))
+        return EloResult(
+            winner_rating=winner_rating + rating_change,
+            loser_rating=loser_rating - rating_change,
+            rating_change=rating_change,
+        )
+
+======================================================================
+FILE: rating/persistent_rating_service.py
+======================================================================
+"""Application service for idempotent persisted multiplayer ratings."""
+
+from dataclasses import dataclass
+
+from authentication.user import User
+from authentication.user_repository import UserRepository
+from rating.elo_rating_service import EloRatingService
+
+
+@dataclass(frozen=True)
+class RatingUpdate:
+    """Authoritative user ratings after one persisted game result."""
+
+    winner: User
+    loser: User
+    winner_change: int
+    loser_change: int
+
+
+class PersistentRatingService:
+    """Calculates and atomically persists one decisive result per game ID."""
+
+    def __init__(
+        self,
+        repository: UserRepository,
+        elo_service: EloRatingService,
+    ) -> None:
+        self._repository = repository
+        self._elo_service = elo_service
+
+    def record_result(
+        self,
+        game_id: str,
+        winner: User,
+        loser: User,
+    ) -> RatingUpdate | None:
+        """Persist a decisive result, or return ``None`` if already recorded."""
+        result = self._elo_service.calculate(winner.rating, loser.rating)
+        persisted = self._repository.apply_rating_update(
+            game_id=game_id,
+            winner_id=winner.id,
+            loser_id=loser.id,
+            winner_rating=result.winner_rating,
+            loser_rating=result.loser_rating,
+        )
+        if not persisted:
+            return None
+        return RatingUpdate(
+            winner=User(winner.id, winner.username, result.winner_rating),
+            loser=User(loser.id, loser.username, result.loser_rating),
+            winner_change=result.rating_change,
+            loser_change=-result.rating_change,
+        )
+
+######################################################################
+SECTION: rooms
+######################################################################
+
+======================================================================
+FILE: rooms/__init__.py
+======================================================================
+"""Transport-independent private room management."""
+
+from rooms.private_room_service import (
+    PrivateRoom,
+    PrivateRoomError,
+    PrivateRoomErrorCode,
+    PrivateRoomService,
+    RoomMatch,
+    RoomStatus,
+)
+
+__all__ = [
+    "PrivateRoom",
+    "PrivateRoomError",
+    "PrivateRoomErrorCode",
+    "PrivateRoomService",
+    "RoomMatch",
+    "RoomStatus",
+]
+
+======================================================================
+FILE: rooms/private_room_service.py
+======================================================================
+"""Thread-safe private room lifecycle without transport or game dependencies."""
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import Enum
+import secrets
+import string
+import threading
+from uuid import uuid4
+
+from authentication.user import User
+
+
+class RoomStatus(Enum):
+    """Lifecycle of a private room code."""
+
+    OPEN = "open"
+    FULL = "full"
+    CLOSED = "closed"
+
+
+class PrivateRoomErrorCode(Enum):
+    """Stable domain errors translated by the WebSocket boundary."""
+
+    UNKNOWN_ROOM = "unknown_room_code"
+    FULL_ROOM = "full_room"
+    CLOSED_ROOM = "closed_room"
+    INVALID_STATE = "invalid_state"
+
+
+class PrivateRoomError(ValueError):
+    """Reports a rejected room operation without transport details."""
+
+    def __init__(self, code: PrivateRoomErrorCode) -> None:
+        super().__init__(code.value)
+        self.code = code
+
+
+@dataclass
+class PrivateRoom:
+    """Server-owned waiting room with one authenticated creator."""
+
+    code: str
+    creator_connection: object
+    creator: User
+    status: RoomStatus = RoomStatus.OPEN
+
+
+@dataclass(frozen=True)
+class RoomMatch:
+    """The single pairing produced when a guest fills an open room."""
+
+    game_id: str
+    room_code: str
+    creator_connection: object
+    creator: User
+    guest_connection: object
+    guest: User
+
+
+class PrivateRoomService:
+    """Creates short room codes and atomically fills each room once."""
+
+    _ALPHABET = string.ascii_uppercase + string.digits
+
+    def __init__(
+        self,
+        code_length: int = 6,
+        code_factory: Callable[[int], str] | None = None,
+    ) -> None:
+        if code_length < 4:
+            raise ValueError("code_length must be at least four")
+        self._code_length = code_length
+        self._code_factory = code_factory or self._secure_code
+        self._rooms: dict[str, PrivateRoom] = {}
+        self._room_by_client: dict[object, str] = {}
+        self._lock = threading.RLock()
+
+    def create(self, connection: object, user: User) -> PrivateRoom:
+        """Create one open room for a client that is not already in a room."""
+        with self._lock:
+            if connection in self._room_by_client:
+                raise PrivateRoomError(PrivateRoomErrorCode.INVALID_STATE)
+            code = self._unique_code()
+            room = PrivateRoom(code, connection, user)
+            self._rooms[code] = room
+            self._room_by_client[connection] = code
+            return room
+
+    def join(self, code: object, connection: object, user: User) -> RoomMatch:
+        """Atomically fill an open room and return exactly one game pairing."""
+        if not isinstance(code, str):
+            raise PrivateRoomError(PrivateRoomErrorCode.UNKNOWN_ROOM)
+        normalized = code.strip().upper()
+        with self._lock:
+            if connection in self._room_by_client:
+                raise PrivateRoomError(PrivateRoomErrorCode.INVALID_STATE)
+            room = self._rooms.get(normalized)
+            if room is None:
+                raise PrivateRoomError(PrivateRoomErrorCode.UNKNOWN_ROOM)
+            if room.status is RoomStatus.CLOSED:
+                raise PrivateRoomError(PrivateRoomErrorCode.CLOSED_ROOM)
+            if room.status is RoomStatus.FULL:
+                raise PrivateRoomError(PrivateRoomErrorCode.FULL_ROOM)
+            if room.creator_connection == connection or room.creator.id == user.id:
+                raise PrivateRoomError(PrivateRoomErrorCode.INVALID_STATE)
+            room.status = RoomStatus.FULL
+            self._room_by_client[connection] = normalized
+            return RoomMatch(
+                str(uuid4()),
+                normalized,
+                room.creator_connection,
+                room.creator,
+                connection,
+                user,
+            )
+
+    def cancel(self, creator_connection: object) -> str:
+        """Close an open room owned by its creator."""
+        with self._lock:
+            code = self._room_by_client.get(creator_connection)
+            room = self._rooms.get(code) if code is not None else None
+            if (
+                room is None
+                or room.creator_connection != creator_connection
+                or room.status is not RoomStatus.OPEN
+            ):
+                raise PrivateRoomError(PrivateRoomErrorCode.INVALID_STATE)
+            room.status = RoomStatus.CLOSED
+            self._room_by_client.pop(creator_connection, None)
+            return room.code
+
+    def disconnect(self, connection: object) -> str | None:
+        """Close an abandoned open room and release client membership."""
+        with self._lock:
+            code = self._room_by_client.pop(connection, None)
+            room = self._rooms.get(code) if code is not None else None
+            if room is None:
+                return None
+            if room.creator_connection == connection and room.status is RoomStatus.OPEN:
+                room.status = RoomStatus.CLOSED
+                return room.code
+            return None
+
+    def contains(self, connection: object) -> bool:
+        """Return whether a client currently owns or occupies a room."""
+        with self._lock:
+            return connection in self._room_by_client
+
+    def release_match(self, room_code: str) -> None:
+        """Release connection membership after the game session takes ownership."""
+        with self._lock:
+            room = self._rooms.get(room_code)
+            if room is None:
+                return
+            for connection, code in tuple(self._room_by_client.items()):
+                if code == room_code:
+                    self._room_by_client.pop(connection, None)
+
+    def room(self, code: str) -> PrivateRoom | None:
+        """Return a room for diagnostics without exposing the room collection."""
+        with self._lock:
+            return self._rooms.get(code)
+
+    def _unique_code(self) -> str:
+        for _ in range(100):
+            code = self._code_factory(self._code_length).upper()
+            if code not in self._rooms:
+                return code
+        raise RuntimeError("Unable to generate a unique room code")
+
+    @classmethod
+    def _secure_code(cls, length: int) -> str:
+        return "".join(secrets.choice(cls._ALPHABET) for _ in range(length))
+
+######################################################################
+SECTION: spectators
+######################################################################
+
+======================================================================
+FILE: spectators/__init__.py
+======================================================================
+"""Spectator registry for active multiplayer games."""
+
+from spectators.spectator_service import SpectatableGame, SpectatorService
+
+__all__ = ["SpectatableGame", "SpectatorService"]
+
+======================================================================
+FILE: spectators/spectator_service.py
+======================================================================
+"""Thread-safe spectator membership independent of transport and gameplay."""
+
+from dataclasses import dataclass
+import threading
+
+from authentication.user import User
+
+
+@dataclass(frozen=True)
+class SpectatableGame:
+    """Public server-authoritative metadata for one active game."""
+
+    game_id: str
+    white: User
+    black: User
+
+
+class SpectatorService:
+    """Tracks active game metadata and read-only viewers."""
+
+    def __init__(self) -> None:
+        self._games: dict[str, SpectatableGame] = {}
+        self._spectators_by_game: dict[str, set[object]] = {}
+        self._game_by_spectator: dict[object, str] = {}
+        self._lock = threading.RLock()
+
+    def register_game(self, game: SpectatableGame) -> None:
+        """Expose a newly started game for spectating."""
+        with self._lock:
+            self._games[game.game_id] = game
+            self._spectators_by_game.setdefault(game.game_id, set())
+
+    def list_games(self) -> tuple[SpectatableGame, ...]:
+        """Return a deterministic immutable snapshot of active games."""
+        with self._lock:
+            return tuple(self._games[key] for key in sorted(self._games))
+
+    def join(self, game_id: object, spectator: object) -> bool:
+        """Attach an otherwise-idle connection to an active game."""
+        if not isinstance(game_id, str):
+            return False
+        with self._lock:
+            if game_id not in self._games or spectator in self._game_by_spectator:
+                return False
+            self._spectators_by_game[game_id].add(spectator)
+            self._game_by_spectator[spectator] = game_id
+            return True
+
+    def leave(self, spectator: object) -> str | None:
+        """Remove a spectator without changing the observed game."""
+        with self._lock:
+            game_id = self._game_by_spectator.pop(spectator, None)
+            if game_id is not None:
+                self._spectators_by_game.get(game_id, set()).discard(spectator)
+            return game_id
+
+    def is_spectator(self, connection: object) -> bool:
+        with self._lock:
+            return connection in self._game_by_spectator
+
+    def spectators_for(self, game_id: str) -> tuple[object, ...]:
+        with self._lock:
+            return tuple(self._spectators_by_game.get(game_id, ()))
+
+    def close_game(self, game_id: str) -> tuple[object, ...]:
+        """Remove an ended game and return viewers that must close their view."""
+        with self._lock:
+            self._games.pop(game_id, None)
+            spectators = tuple(self._spectators_by_game.pop(game_id, ()))
+            for spectator in spectators:
+                self._game_by_spectator.pop(spectator, None)
+            return spectators
