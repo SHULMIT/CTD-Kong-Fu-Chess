@@ -12,7 +12,8 @@ This class does not implement chess rules or movement logic.
 It acts as the central facade of the game layer.
 """
 
-from game.move_result import MoveReason, MoveResult
+from game.move_reason import MoveReason
+from game.move_result import MoveResult
 from game.player_activity_service import PlayerActivityService
 from game.game_query_service import GameQueryService
 from game.game_state_service import GameStateService

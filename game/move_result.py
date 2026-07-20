@@ -11,27 +11,7 @@ between the GameEngine and the Controller.
 """
 
 from dataclasses import dataclass
-from enum import Enum
-
-
-class MoveReason(Enum):
-    """
-    Possible results returned by GameEngine.
-    """
-
-    OK = "ok"
-
-    GAME_OVER = "game_over"
-
-    MOTION_IN_PROGRESS = "motion_in_progress"
-
-    OUTSIDE_BOARD = "outside_board"
-
-    EMPTY_SOURCE = "empty_source"
-
-    FRIENDLY_DESTINATION = "friendly_destination"
-
-    ILLEGAL_PIECE_MOVE = "illegal_piece_move"
+from game.move_reason import MoveReason
 
 
 @dataclass(frozen=True)

@@ -10,7 +10,7 @@ from board_io.text_board_formatter import TextBoardFormatter
 from model.position import Position
 from model.piece import PieceColor
 from rules.rule_engine import RuleEngine
-from rules.move_reason import MoveReason
+from game.move_reason import MoveReason
 
 
 class TestIntegrationFullGame(unittest.TestCase):

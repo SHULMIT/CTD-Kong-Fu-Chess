@@ -2,12 +2,12 @@
 Application entry point.
 """
 
-from app.game_factory import GameFactory
+from app.desktop_application_factory import DesktopApplicationFactory
 
 
 def main() -> None:
 
-    application = GameFactory.create()
+    application = DesktopApplicationFactory.create()
 
     application.run()
 

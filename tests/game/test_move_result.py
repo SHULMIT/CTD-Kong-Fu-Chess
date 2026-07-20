@@ -5,7 +5,8 @@ Tests for game.move_result.
 from dataclasses import FrozenInstanceError
 import unittest
 
-from game.move_result import MoveReason, MoveResult
+from game.move_reason import MoveReason
+from game.move_result import MoveResult
 
 
 class TestMoveResult(unittest.TestCase):

@@ -4,13 +4,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
 
+from common.time import utc_now
 from model.piece import PieceColor, PieceType
 from model.position import Position
 
 
 @dataclass(frozen=True)
 class PlayerAction:
-    """A single player action, timestamped using the local wall clock."""
+    """A player action with a timezone-aware UTC occurrence timestamp."""
 
     player: PieceColor
     description: str
@@ -29,7 +30,7 @@ class PlayerActivityService:
         PieceType.KING: 0,
     }
 
-    def __init__(self, clock: Callable[[], datetime] = datetime.now) -> None:
+    def __init__(self, clock: Callable[[], datetime] = utc_now) -> None:
         self._clock = clock
         self._actions = {
             PieceColor.WHITE: [],

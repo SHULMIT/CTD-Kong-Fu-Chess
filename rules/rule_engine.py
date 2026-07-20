@@ -15,7 +15,7 @@ from model.board import Board
 from model.position import Position
 from model.piece import Piece, PieceType
 
-from rules.move_reason import MoveReason
+from game.move_reason import MoveReason
 from rules.move_validation import MoveValidation
 from rules.movement_rule import MovementRule
 

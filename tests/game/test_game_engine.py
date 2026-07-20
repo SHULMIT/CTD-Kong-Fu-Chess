@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import unittest
 
 from game.game_engine import GameEngine
-from game.move_result import MoveReason
+from game.move_reason import MoveReason
 from model.board import Board
 from model.piece import Piece, PieceColor, PieceType
 from model.position import Position

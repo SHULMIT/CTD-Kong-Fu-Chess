@@ -1,16 +1,15 @@
-"""Create a single text file containing the project's implementation classes."""
+"""Create one organized text file containing the full Python implementation."""
 
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 
 
 class ClassCodeExporter:
-    """Exports every non-test Python module that declares a class."""
+    """Exports every non-test Python module, grouped by project layer."""
 
-    DEFAULT_OUTPUT_DIRECTORY = Path("docs") / "generated"
+    DEFAULT_OUTPUT_DIRECTORY = Path()
 
     _EXCLUDED_DIRECTORIES = {
         ".git",
@@ -20,7 +19,26 @@ class ClassCodeExporter:
         "tests",
         "texttests",
     }
-    _CLASS_DECLARATION = re.compile(r"^\s*class\s+", re.MULTILINE)
+    _LAYER_ORDER = {
+        name: index
+        for index, name in enumerate(
+            (
+                "main.py",
+                "app",
+                "controller",
+                "game",
+                "realtime",
+                "rules",
+                "model",
+                "board_io",
+                "errors",
+                "config",
+                "runner",
+                "view",
+                "tools",
+            )
+        )
+    }
 
     def __init__(self, project_root: Path, output_name: str = "all_classes_code.txt") -> None:
         self._project_root = project_root
@@ -40,27 +58,49 @@ class ClassCodeExporter:
         return True
 
     def _build_content(self) -> str:
+        source_files = self._source_files()
+        grouped_files = self._group_files(source_files)
         parts = [
-            "PROJECT CLASSES - FULL SOURCE CODE",
+            "PROJECT - FULL PYTHON SOURCE CODE",
             "=" * 70,
-            "Test files and helper files are excluded.",
+            f"Files included: {len(source_files)}",
+            "Tests, caches, virtual environments, and generated files are excluded.",
+            "",
+            "CONTENTS",
+            "-" * 70,
         ]
 
-        for source_file in self._class_files():
-            relative_path = source_file.relative_to(self._project_root).as_posix()
+        for group_name, files in grouped_files:
+            parts.append(f"{group_name} ({len(files)} files)")
+            parts.extend(
+                f"  - {source_file.relative_to(self._project_root).as_posix()}"
+                for source_file in files
+            )
+
+        for group_name, files in grouped_files:
             parts.extend(
                 [
                     "",
-                    "=" * 70,
-                    f"FILE: {relative_path}",
-                    "=" * 70,
-                    source_file.read_text(encoding="utf-8").rstrip(),
+                    "#" * 70,
+                    f"SECTION: {group_name}",
+                    "#" * 70,
                 ]
             )
+            for source_file in files:
+                relative_path = source_file.relative_to(self._project_root).as_posix()
+                parts.extend(
+                    [
+                        "",
+                        "=" * 70,
+                        f"FILE: {relative_path}",
+                        "=" * 70,
+                        source_file.read_text(encoding="utf-8").rstrip(),
+                    ]
+                )
 
         return "\n".join(parts) + "\n"
 
-    def _class_files(self) -> list[Path]:
+    def _source_files(self) -> list[Path]:
         files: list[Path] = []
         for directory, subdirectories, filenames in os.walk(self._project_root):
             subdirectories[:] = [
@@ -68,15 +108,24 @@ class ClassCodeExporter:
             ]
             for filename in filenames:
                 source_file = Path(directory) / filename
-                if self._is_class_file(source_file):
+                if source_file.suffix == ".py":
                     files.append(source_file)
 
-        return sorted(files, key=lambda path: path.as_posix().lower())
+        return sorted(files, key=self._file_sort_key)
 
-    def _is_class_file(self, source_file: Path) -> bool:
-        if source_file.suffix != ".py":
-            return False
-        return bool(self._CLASS_DECLARATION.search(source_file.read_text(encoding="utf-8")))
+    def _group_files(self, files: list[Path]) -> list[tuple[str, list[Path]]]:
+        groups: dict[str, list[Path]] = {}
+        for source_file in files:
+            relative_path = source_file.relative_to(self._project_root)
+            group_name = relative_path.parts[0]
+            groups.setdefault(group_name, []).append(source_file)
+        return list(groups.items())
+
+    def _file_sort_key(self, source_file: Path) -> tuple[int, str]:
+        relative_path = source_file.relative_to(self._project_root)
+        group_name = relative_path.parts[0]
+        group_order = self._LAYER_ORDER.get(group_name, len(self._LAYER_ORDER))
+        return group_order, relative_path.as_posix().lower()
 
 
 if __name__ == "__main__":

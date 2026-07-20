@@ -4,7 +4,7 @@ Represents the result of move validation.
 
 from dataclasses import dataclass
 
-from rules.move_reason import MoveReason
+from game.move_reason import MoveReason
 
 
 @dataclass(frozen=True)

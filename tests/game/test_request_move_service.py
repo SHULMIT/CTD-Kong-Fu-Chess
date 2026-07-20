@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import unittest
 
 from game.request_move_service import RequestMoveService
-from game.move_result import MoveReason
+from game.move_reason import MoveReason
 
 
 class TestRequestMoveService(unittest.TestCase):

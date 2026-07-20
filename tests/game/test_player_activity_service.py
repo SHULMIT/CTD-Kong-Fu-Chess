@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from unittest.mock import Mock
 
 from game.player_activity_service import PlayerActivityService
 from game.game_engine import GameEngine
@@ -22,9 +23,20 @@ def _record_moves(service: PlayerActivityService, player: PieceColor, count: int
         )
 
 
-def test_records_actions_with_current_local_time():
-    current_time = datetime(2026, 7, 19, 14, 5, 9, 321_000)
-    service = PlayerActivityService(clock=lambda: current_time)
+def test_default_clock_records_timezone_aware_utc_time():
+    service = PlayerActivityService()
+
+    _record_moves(service, PieceColor.WHITE, 1)
+
+    occurred_at = service.get_actions(PieceColor.WHITE)[0].occurred_at
+    assert occurred_at.tzinfo is not None
+    assert occurred_at.utcoffset() == timedelta(0)
+
+
+def test_injected_clock_is_used_exactly():
+    current_time = datetime(2026, 7, 19, 14, 5, 9, 321_000, tzinfo=timezone.utc)
+    clock = Mock(return_value=current_time)
+    service = PlayerActivityService(clock=clock)
 
     service.record_move(
         player=PieceColor.WHITE,
@@ -34,9 +46,26 @@ def test_records_actions_with_current_local_time():
     )
 
     actions = service.get_actions(PieceColor.WHITE)
+    clock.assert_called_once_with()
     assert len(actions) == 1
     assert actions[0].occurred_at == current_time
     assert actions[0].description == "Pawn A2 -> A3"
+
+
+def test_actions_remain_in_recording_order():
+    service = PlayerActivityService()
+
+    service.record_move(
+        PieceColor.WHITE,
+        PieceType.PAWN,
+        Position(6, 0),
+        Position(5, 0),
+    )
+    service.record_jump(PieceColor.WHITE, PieceType.PAWN, Position(5, 0))
+
+    assert [
+        action.description for action in service.get_actions(PieceColor.WHITE)
+    ] == ["Pawn A2 -> A3", "Pawn jumps at A3"]
 
 
 def test_awards_standard_points_for_captured_pieces():

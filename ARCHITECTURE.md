@@ -32,13 +32,14 @@ Realtime never performs rendering.
 
 # Startup Flow
 
-GameFactory
-↓
-GameApplication
-↓
-GameLoop
-↓
-GameScene
+```text
+main.py
+  -> DesktopApplicationFactory
+       -> GameEngineFactory -> GameEngine
+       -> Controller
+       -> GameSceneFactory -> GameScene
+       -> GameApplication -> GameLoop
+```
 
 ---
 

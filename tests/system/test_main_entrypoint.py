@@ -8,7 +8,10 @@ import main
 def test_main_creates_and_runs_the_game_application():
     application = MagicMock()
 
-    with patch("main.GameFactory.create", return_value=application) as create:
+    with patch(
+        "main.DesktopApplicationFactory.create",
+        return_value=application,
+    ) as create:
         main.main()
 
     create.assert_called_once_with()

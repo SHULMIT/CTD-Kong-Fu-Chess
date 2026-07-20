@@ -134,7 +134,8 @@ class PlayerActivityRenderer:
 
     @staticmethod
     def _format_time(occurred_at: datetime) -> str:
-        return occurred_at.strftime("%H:%M:%S.%f")[:-3]
+        local_time = occurred_at.astimezone()
+        return local_time.strftime("%H:%M:%S.%f")[:-3]
 
     @staticmethod
     def _truncate(text: str, max_width: int) -> str:

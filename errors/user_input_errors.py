@@ -15,8 +15,7 @@ from config.constants import (
     ERR_MOTION_IN_PROGRESS,
     ERR_UNKNOWN_COMMAND,
 )
-from game.move_result import MoveReason as GameMoveReason
-from rules.move_reason import MoveReason as RuleMoveReason
+from game.move_reason import MoveReason
 
 
 class UserInputError(Exception):
@@ -80,21 +79,18 @@ class IllegalPieceMoveError(UserInputError):
         super().__init__(ERR_ILLEGAL_PIECE_MOVE)
 
 
-def raise_for_move_reason(reason: GameMoveReason | RuleMoveReason) -> None:
+def raise_for_move_reason(reason: MoveReason) -> None:
     """
     Converts a rejected move reason into a user-facing exception.
     """
 
     reason_to_error = {
-        GameMoveReason.GAME_OVER: GameOverError,
-        GameMoveReason.MOTION_IN_PROGRESS: MotionInProgressError,
-        GameMoveReason.EMPTY_SOURCE: EmptySourceError,
-        GameMoveReason.FRIENDLY_DESTINATION: FriendlyDestinationError,
-        GameMoveReason.ILLEGAL_PIECE_MOVE: IllegalPieceMoveError,
-        RuleMoveReason.OUTSIDE_BOARD: ClickOutsideBoardError,
-        RuleMoveReason.EMPTY_SOURCE: EmptySourceError,
-        RuleMoveReason.FRIENDLY_DESTINATION: FriendlyDestinationError,
-        RuleMoveReason.ILLEGAL_PIECE_MOVE: IllegalPieceMoveError,
+        MoveReason.GAME_OVER: GameOverError,
+        MoveReason.MOTION_IN_PROGRESS: MotionInProgressError,
+        MoveReason.OUTSIDE_BOARD: ClickOutsideBoardError,
+        MoveReason.EMPTY_SOURCE: EmptySourceError,
+        MoveReason.FRIENDLY_DESTINATION: FriendlyDestinationError,
+        MoveReason.ILLEGAL_PIECE_MOVE: IllegalPieceMoveError,
     }
 
     error_type = reason_to_error.get(reason)

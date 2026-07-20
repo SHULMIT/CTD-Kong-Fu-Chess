@@ -9,7 +9,7 @@ from model.board import Board
 from model.piece import Piece, PieceColor, PieceType, PieceState
 from model.position import Position
 from rules.rule_engine import RuleEngine
-from rules.move_reason import MoveReason
+from game.move_reason import MoveReason
 
 
 class TestRuleEngineValidation(unittest.TestCase):
