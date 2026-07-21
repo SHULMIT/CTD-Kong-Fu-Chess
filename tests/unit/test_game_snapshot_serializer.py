@@ -11,7 +11,7 @@ from game.move_reason import MoveReason
 from model.board import Board
 from model.piece import Piece, PieceColor, PieceState, PieceType
 from model.position import Position
-from network.game_snapshot_serializer import GameSnapshotSerializer
+from network.server.transport.game_snapshot_serializer import GameSnapshotSerializer
 from realtime.duration_calculator import DurationCalculator
 from realtime.real_time_arbiter import RealTimeArbiter
 

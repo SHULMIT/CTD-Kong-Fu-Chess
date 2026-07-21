@@ -2,7 +2,7 @@
 
 from authentication.user import User
 from model.piece import PieceColor
-from network.reconnect_session_service import (
+from network.server.matches.reconnect_session_service import (
     ParticipantConnectionState,
     ReconnectSessionService,
 )

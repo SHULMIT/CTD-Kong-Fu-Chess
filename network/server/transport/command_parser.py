@@ -1,12 +1,12 @@
 """Validation and conversion of external dictionaries into commands."""
 
-from network.commands import (
+from network.server.transport.commands import (
     JumpCommand,
     LegalMovesCommand,
     MoveCommand,
     NetworkCommand,
 )
-from network.errors import CommandParseError
+from network.server.transport.errors import CommandParseError
 from model.position import Position
 
 

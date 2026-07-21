@@ -164,7 +164,7 @@ the server.
 Start the server in one terminal:
 
 ```powershell
-.\.venv\Scripts\python.exe -m network.server_main
+.\.venv\Scripts\python.exe -m network.server.main
 ```
 
 Start each client in a separate terminal. Repeat this command for additional
@@ -205,7 +205,7 @@ processes do not reload source files automatically.
 
 ## Server command-line options
 
-`network.server_main` supports the following options:
+`network.server.main` supports the following options:
 
 | Option | Default | Purpose |
 | --- | --- | --- |
@@ -222,7 +222,7 @@ processes do not reload source files automatically.
 Example:
 
 ```powershell
-.\.venv\Scripts\python.exe -m network.server_main `
+.\.venv\Scripts\python.exe -m network.server.main `
   --host 127.0.0.1 `
   --port 8765 `
   --database data/users.db `

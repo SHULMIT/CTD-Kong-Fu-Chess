@@ -1,7 +1,7 @@
 """Unit tests for local client color ownership."""
 
 from model.piece import PieceColor
-from network.session_manager import SessionManager
+from network.server.matches.session_manager import SessionManager
 
 
 def test_first_client_receives_white() -> None:

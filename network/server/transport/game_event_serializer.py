@@ -10,7 +10,7 @@ from events.game_events import (
     ScoreChangedEvent,
 )
 from model.position import Position
-from network.game_snapshot_serializer import JsonValue
+from network.server.transport.game_snapshot_serializer import JsonValue
 
 
 class GameEventSerializer:

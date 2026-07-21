@@ -6,8 +6,8 @@ import json
 from app.game_engine_factory import GameEngineFactory
 from authentication.authentication_service import AuthenticationService
 from authentication.sqlite_user_repository import SQLiteUserRepository
-from network.game_server import GameServer
-from network.reconnect_session_service import ReconnectSessionService
+from network.server.game_server import GameServer
+from network.server.matches.reconnect_session_service import ReconnectSessionService
 from tests.network.test_game_server import FakeConnection
 from tests.unit.test_authentication_service import FastTestHasher
 

@@ -4,7 +4,7 @@ import asyncio
 import json
 
 from app.game_engine_factory import GameEngineFactory
-from network.game_server import GameServer
+from network.server.game_server import GameServer
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
 

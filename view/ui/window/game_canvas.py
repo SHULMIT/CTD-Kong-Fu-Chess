@@ -23,6 +23,9 @@ class GameCanvas:
     """
 
     WINDOW_NAME = "Kung Fu Chess"
+    IMAGE_HEIGHT_INDEX = 0
+    IMAGE_WIDTH_INDEX = 1
+    IMAGE_CHANNELS_INDEX = 2
 
     def __init__(
         self,
@@ -55,11 +58,11 @@ class GameCanvas:
 
     @property
     def width(self) -> int:
-        return self._background_img.shape[1]
+        return self._background_img.shape[self.IMAGE_WIDTH_INDEX]
 
     @property
     def height(self) -> int:
-        return self._background_img.shape[0]
+        return self._background_img.shape[self.IMAGE_HEIGHT_INDEX]
 
     @property
     def display_scale(self) -> float:
@@ -80,10 +83,7 @@ class GameCanvas:
         scale = self._display_scale if self._display_scale > 0 else 1.0
         return int(display_x / scale), int(display_y / scale)
 
-    # ------------------------------------------------------------------
-    # Frame lifecycle
-    # ------------------------------------------------------------------
-
+    
     def reset(self) -> None:
         """
         Resets the working canvas to the original background.
@@ -129,9 +129,6 @@ class GameCanvas:
 
         cv2.imshow(self.WINDOW_NAME, frame)
 
-    # ------------------------------------------------------------------
-    # Events
-    # ------------------------------------------------------------------
 
     def poll_events(self) -> int:
         """

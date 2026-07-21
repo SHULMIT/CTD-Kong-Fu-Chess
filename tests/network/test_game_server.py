@@ -7,8 +7,8 @@ from typing import Any
 from app.game_engine_factory import GameEngineFactory
 from events.game_events import MoveStartedEvent
 from model.position import Position
-from network.game_server import GameServer
-from network.session_manager import SessionManager
+from network.server.game_server import GameServer
+from network.server.matches.session_manager import SessionManager
 
 
 class FakeConnection:

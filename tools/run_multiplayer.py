@@ -19,7 +19,7 @@ def main() -> int:
         print(f"Port {PORT} is already in use. Close the old server and try again.")
         return 1
 
-    server = _start_process("network.server_main", hide_window=True)
+    server = _start_process("network.server.main", hide_window=True)
     clients: list[subprocess.Popen] = []
     try:
         if not _wait_for_server(server):

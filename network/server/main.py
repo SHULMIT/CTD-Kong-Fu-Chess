@@ -7,9 +7,9 @@ from collections.abc import Sequence
 from authentication.authentication_service import AuthenticationService
 from authentication.sqlite_user_repository import SQLiteUserRepository
 from app.game_engine_factory import GameEngineFactory
-from network.game_server import GameServer
-from network.reconnect_session_service import ReconnectSessionService
-from network.server_logging import configure_server_logging
+from network.server.game_server import GameServer
+from network.server.matches.reconnect_session_service import ReconnectSessionService
+from network.server.logging_config import configure_server_logging
 from rating.elo_rating_service import EloRatingService
 from rating.persistent_rating_service import PersistentRatingService
 

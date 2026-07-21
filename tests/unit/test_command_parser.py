@@ -6,9 +6,9 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from model.position import Position
-from network.command_parser import CommandParser
-from network.commands import JumpCommand, LegalMovesCommand, MoveCommand
-from network.errors import CommandParseError
+from network.server.transport.command_parser import CommandParser
+from network.server.transport.commands import JumpCommand, LegalMovesCommand, MoveCommand
+from network.server.transport.errors import CommandParseError
 
 
 def test_parse_valid_move_command() -> None:

@@ -4,7 +4,7 @@ import json
 import logging
 from pathlib import Path
 
-from network.server_logging import configure_server_logging
+from network.server.logging_config import configure_server_logging
 
 
 def test_console_and_rotating_file_logging_redact_sensitive_values(

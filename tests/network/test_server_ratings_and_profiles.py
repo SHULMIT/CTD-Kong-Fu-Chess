@@ -7,7 +7,7 @@ from app.game_engine_factory import GameEngineFactory
 from authentication.authentication_service import AuthenticationService
 from authentication.sqlite_user_repository import SQLiteUserRepository
 from model.piece import PieceColor
-from network.game_server import GameServer
+from network.server.game_server import GameServer
 from rating.elo_rating_service import EloRatingService
 from rating.persistent_rating_service import PersistentRatingService
 from tests.network.test_game_server import FakeConnection
