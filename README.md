@@ -328,6 +328,18 @@ Run multiplayer and WebSocket tests only:
 .\.venv\Scripts\python.exe -m pytest tests\network -q
 ```
 
+Measure test coverage and enforce the project's 80% minimum:
+
+```powershell
+.\.venv\Scripts\python.exe -m coverage erase
+.\.venv\Scripts\python.exe -m coverage run -m pytest -q
+.\.venv\Scripts\python.exe -m coverage report
+```
+
+Coverage configuration lives in [`.coveragerc`](.coveragerc). The command
+fails when total source coverage drops below 80%. Tests and the local virtual
+environment are excluded from the measured application source.
+
 The repository's `pytest.ini` also includes game, integration, system, tools,
 and UI test directories in the full suite. Test counts are intentionally not
 hardcoded here because they change as coverage grows.
