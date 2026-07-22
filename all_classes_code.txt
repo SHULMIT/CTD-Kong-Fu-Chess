@@ -1,6 +1,6 @@
 PROJECT - FULL PYTHON SOURCE CODE
 ======================================================================
-Files included: 133
+Files included: 134
 Tests, caches, virtual environments, and generated files are excluded.
 
 CONTENTS
@@ -119,9 +119,10 @@ events (5 files)
 matchmaking (2 files)
   - matchmaking/__init__.py
   - matchmaking/matchmaking_service.py
-network (28 files)
+network (29 files)
   - network/__init__.py
   - network/client_main.py
+  - network/game_event_type.py
   - network/multiplayer_controller.py
   - network/network_client.py
   - network/remote_game_state.py
@@ -7105,6 +7106,24 @@ if __name__ == "__main__":
     main()
 
 ======================================================================
+FILE: network/game_event_type.py
+======================================================================
+"""Shared discriminators for game events carried by the network protocol."""
+
+from enum import Enum
+
+
+class GameEventType(str, Enum):
+    """Stable wire names for events nested inside ``game_event`` messages."""
+
+    MOVE_STARTED = "move_started"
+    MOVE_COMPLETED = "move_completed"
+    JUMP_STARTED = "jump_started"
+    JUMP_COMPLETED = "jump_completed"
+    SCORE_CHANGED = "score_changed"
+    GAME_OVER = "game_over"
+
+======================================================================
 FILE: network/multiplayer_controller.py
 ======================================================================
 """UI command adapter for a server-authoritative multiplayer game."""
@@ -7630,6 +7649,7 @@ from game.player_activity_service import PlayerAction
 from model.board import Board
 from model.piece import Piece, PieceColor, PieceState, PieceType
 from model.position import Position
+from network.game_event_type import GameEventType
 from network.network_client import NetworkClient
 
 
@@ -7940,13 +7960,13 @@ class RemoteGameState:
 
         event_type = event.get("type")
         try:
-            if event_type == "move_started":
+            if event_type == GameEventType.MOVE_STARTED:
                 self._record_move_event(event)
-            elif event_type == "jump_started":
+            elif event_type == GameEventType.JUMP_STARTED:
                 self._record_jump_event(event)
-            elif event_type == "score_changed":
+            elif event_type == GameEventType.SCORE_CHANGED:
                 self._record_score_event(event)
-            elif event_type == "game_over":
+            elif event_type == GameEventType.GAME_OVER:
                 self._record_game_over_event(event)
         except (KeyError, TypeError, ValueError):
             return
@@ -10262,6 +10282,7 @@ from events.game_events import (
     ScoreChangedEvent,
 )
 from model.position import Position
+from network.game_event_type import GameEventType
 from network.server.transport.game_snapshot_serializer import JsonValue
 
 
@@ -10271,16 +10292,16 @@ class GameEventSerializer:
     def serialize(self, event: Event) -> dict[str, JsonValue]:
         """Return a JSON-safe payload for a server-observed game event."""
         if isinstance(event, MoveStartedEvent):
-            return self._serialize_move("move_started", event)
+            return self._serialize_move(GameEventType.MOVE_STARTED, event)
         if isinstance(event, MoveCompletedEvent):
-            return self._serialize_move("move_completed", event)
+            return self._serialize_move(GameEventType.MOVE_COMPLETED, event)
         if isinstance(event, JumpStartedEvent):
-            return self._serialize_jump("jump_started", event)
+            return self._serialize_jump(GameEventType.JUMP_STARTED, event)
         if isinstance(event, JumpCompletedEvent):
-            return self._serialize_jump("jump_completed", event)
+            return self._serialize_jump(GameEventType.JUMP_COMPLETED, event)
         if isinstance(event, ScoreChangedEvent):
             return {
-                "type": "score_changed",
+                "type": GameEventType.SCORE_CHANGED.value,
                 "player": event.player.name.lower(),
                 "score": event.score,
             }
@@ -10288,16 +10309,16 @@ class GameEventSerializer:
             winner = None
             if event.winner is not None:
                 winner = event.winner.name.lower()
-            return {"type": "game_over", "winner": winner}
+            return {"type": GameEventType.GAME_OVER.value, "winner": winner}
         raise ValueError(f"Unsupported game event: {type(event).__name__}")
 
     @staticmethod
     def _serialize_move(
-        event_type: str,
+        event_type: GameEventType,
         event: MoveStartedEvent | MoveCompletedEvent,
     ) -> dict[str, JsonValue]:
         return {
-            "type": event_type,
+            "type": event_type.value,
             "piece_id": event.piece_id,
             "source": GameEventSerializer._position(event.source),
             "target": GameEventSerializer._position(event.target),
@@ -10305,11 +10326,11 @@ class GameEventSerializer:
 
     @staticmethod
     def _serialize_jump(
-        event_type: str,
+        event_type: GameEventType,
         event: JumpStartedEvent | JumpCompletedEvent,
     ) -> dict[str, JsonValue]:
         return {
-            "type": event_type,
+            "type": event_type.value,
             "piece_id": event.piece_id,
             "position": GameEventSerializer._position(event.position),
         }
