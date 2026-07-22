@@ -11,6 +11,7 @@ from game.player_activity_service import PlayerAction
 from model.board import Board
 from model.piece import Piece, PieceColor, PieceState, PieceType
 from model.position import Position
+from network.game_event_type import GameEventType
 from network.network_client import NetworkClient
 
 
@@ -321,13 +322,13 @@ class RemoteGameState:
 
         event_type = event.get("type")
         try:
-            if event_type == "move_started":
+            if event_type == GameEventType.MOVE_STARTED:
                 self._record_move_event(event)
-            elif event_type == "jump_started":
+            elif event_type == GameEventType.JUMP_STARTED:
                 self._record_jump_event(event)
-            elif event_type == "score_changed":
+            elif event_type == GameEventType.SCORE_CHANGED:
                 self._record_score_event(event)
-            elif event_type == "game_over":
+            elif event_type == GameEventType.GAME_OVER:
                 self._record_game_over_event(event)
         except (KeyError, TypeError, ValueError):
             return

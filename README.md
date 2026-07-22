@@ -46,7 +46,9 @@ game, rules, realtime, and model components.
   behavior remain in `realtime`.
 - The internal `EventBus` publishes immutable domain events for moves, jumps,
   scores, and game completion. Multiplayer serialization and broadcasting are
-  outside the domain model.
+  outside the domain model. The shared `network.game_event_type.GameEventType`
+  enum defines the stable wire names used by both the server serializer and
+  the remote client state.
 - `GameServer` is the WebSocket boundary and authoritative source of truth. It
   parses client intent, enforces ownership, invokes existing game APIs, and
   broadcasts authoritative snapshots and events.
@@ -251,6 +253,27 @@ Messages are JSON objects with a required `type`. The main categories are:
 
 The protocol is intentionally server-authoritative. A client-provided username,
 rating, color, game result, or board state is never accepted as authoritative.
+
+Authoritative engine events are wrapped in a `game_event` message:
+
+```json
+{
+  "type": "game_event",
+  "event_id": 1,
+  "event": {
+    "type": "move_started",
+    "piece_id": 7,
+    "source": {"row": 6, "column": 0},
+    "target": {"row": 5, "column": 0}
+  }
+}
+```
+
+The supported nested event types are `move_started`, `move_completed`,
+`jump_started`, `jump_completed`, `score_changed`, and `game_over`. Their wire
+names are centralized in `network/game_event_type.py`. Domain events remain in
+`events/game_events.py`, while `GameEventSerializer` performs the explicit
+domain-to-network conversion.
 
 ## Database
 
