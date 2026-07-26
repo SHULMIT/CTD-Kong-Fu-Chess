@@ -7,21 +7,28 @@ from realtime.motion import Motion
 
 
 class MotionTimeline:
-    """
-    Owns simulation clock and event delta calculations.
+    """Owns simulation clock and event delta calculations.
 
-    This class is intentionally focused on time slicing only.
-    It does not resolve collisions or board state transitions.
-    """
+        This class is intentionally focused on time slicing only.
+        It does not resolve collisions or board state transitions.
+
+    מייצגת את רכיב השרת ``MotionTimeline`` ומרכזת את התנהגותו.
+
+    Responsibility: Owns simulation clock and event delta calculations.
+
+    אחריות: מייצגת את רכיב השרת ``MotionTimeline`` ומרכזת את התנהגותו."""
 
     def __init__(self):
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._clock_milliseconds = 0
 
     @property
     def current_time(self) -> int:
-        """
-        Returns current simulation time.
-        """
+        """Returns current simulation time.
+
+        מבצעת את פעולת ``current`` הזמן."""
 
         return self._clock_milliseconds
 
@@ -31,9 +38,9 @@ class MotionTimeline:
         motions: list[Motion],
         airborne_manager: AirborneManager,
     ) -> int:
-        """
-        Returns the time slice until the next meaningful event.
-        """
+        """Returns the time slice until the next meaningful event.
+
+        מבצעת את פעולת ``next`` אירוע ``delta``."""
 
         next_event_time = remaining_time
 
@@ -56,9 +63,9 @@ class MotionTimeline:
         airborne_manager: AirborneManager,
         milliseconds: int,
     ) -> None:
-        """
-        Applies a time slice to motions, airborne timers, and clock.
-        """
+        """Applies a time slice to motions, airborne timers, and clock.
+
+        מבצעת את פעולת ``advance``."""
 
         for motion in motions:
             motion.advance_time(milliseconds)

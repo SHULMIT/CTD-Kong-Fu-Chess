@@ -12,7 +12,13 @@ from model.piece import PieceColor
 
 
 class ParticipantConnectionState(Enum):
-    """Server-side connectivity state for a matched participant."""
+    """Server-side connectivity state for a matched participant.
+
+    מייצגת את מצב החיבור בצד השרת של משתתף ששודך למשחק.
+
+    Responsibility: Server-side connectivity state for a matched participant.
+
+    אחריות: מייצגת את מצב החיבור בצד השרת של משתתף ששודך למשחק."""
 
     CONNECTED = "connected"
     DISCONNECTED_WAITING = "disconnected_waiting"
@@ -21,7 +27,13 @@ class ParticipantConnectionState(Enum):
 
 @dataclass
 class GameParticipant:
-    """Mutable server-only connection data for one immutable game identity."""
+    """Mutable server-only connection data for one immutable game identity.
+
+    מחזיקה נתוני חיבור משתנים של השרת עבור זהות משחק קבועה אחת.
+
+    Responsibility: Mutable server-only connection data for one immutable game identity.
+
+    אחריות: מחזיקה נתוני חיבור משתנים של השרת עבור זהות משחק קבועה אחת."""
 
     user: User
     color: PieceColor
@@ -33,7 +45,13 @@ class GameParticipant:
 
 @dataclass(frozen=True)
 class DisconnectNotice:
-    """Facts needed to notify an opponent and schedule expiry."""
+    """Facts needed to notify an opponent and schedule expiry.
+
+    מכילה את הנתונים הדרושים להודעה ליריב ולתזמון פקיעת זמן.
+
+    Responsibility: Facts needed to notify an opponent and schedule expiry.
+
+    אחריות: מכילה את הנתונים הדרושים להודעה ליריב ולתזמון פקיעת זמן."""
 
     game_id: str
     user: User
@@ -44,7 +62,13 @@ class DisconnectNotice:
 
 @dataclass(frozen=True)
 class ResumeResult:
-    """Validated attachment of a new connection to an existing participant."""
+    """Validated attachment of a new connection to an existing participant.
+
+    מייצגת הצמדה מאומתת של חיבור חדש למשתתף קיים.
+
+    Responsibility: Validated attachment of a new connection to an existing participant.
+
+    אחריות: מייצגת הצמדה מאומתת של חיבור חדש למשתתף קיים."""
 
     game_id: str
     user: User
@@ -55,7 +79,13 @@ class ResumeResult:
 
 @dataclass(frozen=True)
 class ExpiryResult:
-    """Idempotent terminal result produced by one expired deadline."""
+    """Idempotent terminal result produced by one expired deadline.
+
+    מייצגת תוצאת סיום אידמפוטנטית הנוצרת לאחר פקיעת deadline.
+
+    Responsibility: Idempotent terminal result produced by one expired deadline.
+
+    אחריות: מייצגת תוצאת סיום אידמפוטנטית הנוצרת לאחר פקיעת deadline."""
 
     game_id: str
     loser: User | None
@@ -65,13 +95,22 @@ class ExpiryResult:
 
 
 class ReconnectSessionService:
-    """Owns resume tokens, participant connections, and reconnect deadlines."""
+    """Owns resume tokens, participant connections, and reconnect deadlines.
+
+    מנהלת token-ים לחידוש, חיבורי משתתפים ומועדי התחברות מחדש.
+
+    Responsibility: Owns resume tokens, participant connections, and reconnect deadlines.
+
+    אחריות: מנהלת token-ים לחידוש, חיבורי משתתפים ומועדי התחברות מחדש."""
 
     def __init__(
         self,
         timeout_seconds: float = 20.0,
         clock: Callable[[], float] = time.time,
     ) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         self.timeout_seconds = timeout_seconds
@@ -88,7 +127,9 @@ class ReconnectSessionService:
         game_id: str,
         participants: tuple[tuple[object, User, PieceColor], ...],
     ) -> dict[object, str]:
-        """Register one active game and issue opaque tokens to both clients."""
+        """Register one active game and issue opaque tokens to both clients.
+
+        רושמת משחק פעיל ומנפיקה token אטום לשני הלקוחות."""
         with self._lock:
             self._game_id = game_id
             self._participants.clear()
@@ -106,7 +147,9 @@ class ReconnectSessionService:
             return tokens
 
     def disconnect(self, connection: object) -> DisconnectNotice | None:
-        """Mark the current participant connection as temporarily absent."""
+        """Mark the current participant connection as temporarily absent.
+
+        מסמנת את חיבור המשתתף הנוכחי כחסר באופן זמני."""
         with self._lock:
             user_id = self._user_by_connection.pop(connection, None)
             if user_id is None or self._completed or self._game_id is None:
@@ -128,7 +171,9 @@ class ReconnectSessionService:
             )
 
     def resume(self, connection: object, token: object) -> ResumeResult | None:
-        """Validate an opaque token and atomically attach a replacement socket."""
+        """Validate an opaque token and atomically attach a replacement socket.
+
+        מאמתת token אטום ומצמידה אטומית socket חלופי למשתתף."""
         if not isinstance(token, str):
             return None
         with self._lock:
@@ -162,7 +207,9 @@ class ReconnectSessionService:
             )
 
     def expire(self, user_id: int, deadline: float) -> ExpiryResult | None:
-        """Finalize a still-current deadline once; stale callbacks are harmless."""
+        """Finalize a still-current deadline once; stale callbacks are harmless.
+
+        מסיימת deadline שעדיין בתוקף פעם אחת; callbacks ישנים אינם מזיקים."""
         with self._lock:
             participant = self._participants.get(user_id)
             if participant is None or self._completed:
@@ -192,6 +239,9 @@ class ReconnectSessionService:
             )
 
     def is_paused(self) -> bool:
+        """Return whether a participant is awaiting reconnection.
+
+        בודקת אם משתתף ממתין לחיבור מחדש."""
         with self._lock:
             return any(
                 participant.state is ParticipantConnectionState.DISCONNECTED_WAITING
@@ -199,12 +249,17 @@ class ReconnectSessionService:
             )
 
     def participant_for_connection(self, connection: object) -> GameParticipant | None:
+        """Return the participant assigned to a connection.
+
+        מחזירה את המשתתף המשויך לחיבור."""
         with self._lock:
             user_id = self._user_by_connection.get(connection)
             return self._participants.get(user_id) if user_id is not None else None
 
     def cleanup(self) -> None:
-        """Invalidate all tokens and release completed session references."""
+        """Invalidate all tokens and release completed session references.
+
+        מבטלת את כל ה־token-ים ומשחררת הפניות של session שהסתיים."""
         with self._lock:
             self._participants.clear()
             self._user_by_connection.clear()
@@ -212,6 +267,9 @@ class ReconnectSessionService:
             self._game_id = None
 
     def _opponent(self, user_id: int) -> GameParticipant | None:
+        """Return the opposing participant, when one exists.
+
+        מחזירה את המשתתף היריב, אם הוא קיים."""
         return next(
             (item for key, item in self._participants.items() if key != user_id),
             None,

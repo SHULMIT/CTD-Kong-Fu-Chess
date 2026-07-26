@@ -16,21 +16,28 @@ from model.position import Position
 
 
 class GameQueryService:
-    """
-    Owns non-mutating game queries for controller and runner usage.
-    """
+    """Owns non-mutating game queries for controller and runner usage.
+
+    מייצגת את רכיב השרת ``GameQueryService`` ומרכזת את התנהגותו.
+
+    Responsibility: Owns non-mutating game queries for controller and runner usage.
+
+    אחריות: מייצגת את רכיב השרת ``GameQueryService`` ומרכזת את התנהגותו."""
 
     def __init__(
         self,
         board: Board,
     ):
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._board = board
 
     @property
     def board(self) -> Board:
-        """
-        Returns board reference for view/formatting.
-        """
+        """Returns board reference for view/formatting.
+
+        מבצעת את פעולת הלוח."""
 
         return self._board
 
@@ -38,9 +45,9 @@ class GameQueryService:
         self,
         position: Position,
     ) -> bool:
-        """
-        Returns whether a position is inside board bounds.
-        """
+        """Returns whether a position is inside board bounds.
+
+        בודקת אם ``inside``."""
 
         return self._board.is_inside(position)
 
@@ -48,9 +55,9 @@ class GameQueryService:
         self,
         position: Position,
     ):
-        """
-        Returns the board cell content at position.
-        """
+        """Returns the board cell content at position.
+
+        מחזירה את הכלי."""
 
         return self._board.get_piece(position)
 
@@ -58,9 +65,9 @@ class GameQueryService:
         self,
         position: Position,
     ) -> bool:
-        """
-        Returns whether a non-empty piece exists at position.
-        """
+        """Returns whether a non-empty piece exists at position.
+
+        בודקת אם קיים הכלי."""
 
         piece = self._board.get_piece(position)
         return piece is not None and piece != self._board.EMPTY_CELL

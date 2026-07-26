@@ -14,7 +14,13 @@ from rating.persistent_rating_service import PersistentRatingService, RatingUpda
 
 
 class RatingFinalizer:
-    """Owns current player profiles and persists each decisive result once."""
+    """Owns current player profiles and persists each decisive result once.
+
+    מחזיקה את פרופילי השחקנים הנוכחיים ושומרת כל תוצאה מכרעת פעם אחת.
+
+    Responsibility: Owns current player profiles and persists each decisive result once.
+
+    אחריות: מחזיקה את פרופילי השחקנים הנוכחיים ושומרת כל תוצאה מכרעת פעם אחת."""
 
     def __init__(
         self,
@@ -25,6 +31,9 @@ class RatingFinalizer:
         game_id_provider: Callable[[], str],
         logger: logging.Logger,
     ) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._service = service
         self._authentication = authentication
         self._sessions = sessions
@@ -34,16 +43,24 @@ class RatingFinalizer:
         self.game_users_by_color: dict[PieceColor, User] = {}
 
     def set_players(self, white: User, black: User) -> None:
+        """Set the players whose ratings will be finalized.
+
+        מגדירה את השחקנים שדירוגיהם יעודכנו."""
         self.game_users_by_color.clear()
         self.game_users_by_color.update(
             {PieceColor.WHITE: white, PieceColor.BLACK: black}
         )
 
     def clear(self) -> None:
+        """Clear the stored players and completion state.
+
+        מנקה את השחקנים השמורים ואת מצב ההשלמה."""
         self.game_users_by_color.clear()
 
     async def finalize(self, winner_color: PieceColor) -> None:
-        """Persist and broadcast one authoritative rating result."""
+        """Persist and broadcast one authoritative rating result.
+
+        שומרת ומשדרת תוצאת דירוג סמכותית אחת."""
         if self._service is None:
             return
         players = self.users_by_color()
@@ -82,6 +99,9 @@ class RatingFinalizer:
         self,
         rating_changes: dict[int, int] | None = None,
     ) -> list[JsonValue]:
+        """Return the current player profiles when both are available.
+
+        מחזירה את פרופילי השחקנים כאשר שניהם זמינים."""
         profiles: list[JsonValue] = []
         users = self.users_by_color()
         for color in (PieceColor.WHITE, PieceColor.BLACK):
@@ -99,6 +119,9 @@ class RatingFinalizer:
         return profiles
 
     def users_by_color(self) -> dict[PieceColor, User]:
+        """Return the players indexed by their assigned colors.
+
+        מחזירה את השחקנים לפי הצבעים שהוקצו להם."""
         users = dict(self.game_users_by_color)
         for connection, user in self._authentication.users.items():
             color = self._sessions.color_for(connection)
@@ -107,6 +130,9 @@ class RatingFinalizer:
         return users
 
     def replace_user(self, updated_user: User) -> None:
+        """Replace a stored player with an updated user record.
+
+        מחליפה שחקן שמור ברשומת משתמש מעודכנת."""
         for color, user in self.game_users_by_color.items():
             if user.id == updated_user.id:
                 self.game_users_by_color[color] = updated_user
@@ -114,6 +140,9 @@ class RatingFinalizer:
         self._authentication.replace(updated_user)
 
     async def _broadcast_update(self, update: RatingUpdate) -> None:
+        """Broadcast the updated rating profiles to connected players.
+
+        משדרת לשחקנים המחוברים את פרופילי הדירוג המעודכנים."""
         changes = {
             update.winner.id: update.winner_change,
             update.loser.id: update.loser_change,

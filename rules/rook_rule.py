@@ -1,4 +1,4 @@
-﻿"""
+"""
 Movement rule for the rook.
 """
 
@@ -14,9 +14,13 @@ from rules.movement_utils import (
 
 
 class RookRule(MovementRule):
-    """
-    Calculates all legal rook moves.
-    """
+    """Calculates all legal rook moves.
+
+    מייצגת את רכיב השרת ``RookRule`` ומרכזת את התנהגותו.
+
+    Responsibility: Calculates all legal rook moves.
+
+    אחריות: מייצגת את רכיב השרת ``RookRule`` ומרכזת את התנהגותו."""
 
     def get_legal_moves(
         self,
@@ -24,6 +28,9 @@ class RookRule(MovementRule):
         board: Board,
     ) -> set[Position]:
 
+        """Return legal moves.
+
+        מחזירה את ``legal`` המהלכים."""
         legal_moves = set()
 
         for row_step, column_step in ORTHOGONAL_DIRECTIONS:

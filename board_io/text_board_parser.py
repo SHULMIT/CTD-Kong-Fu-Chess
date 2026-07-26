@@ -13,20 +13,24 @@ from model.piece_mapper import PieceMapper
 
 
 class TextBoardParser:
-    """
-    Parses a textual board representation into a Board object.
+    """Parses a textual board representation into a Board object.
 
-    Responsibilities:
-        - Validate the input.
-        - Convert text tokens into Piece objects.
-        - Build the Board.
-    """
+        Responsibilities:
+            - Validate the input.
+            - Convert text tokens into Piece objects.
+            - Build the Board.
+
+    מייצגת את רכיב השרת ``TextBoardParser`` ומרכזת את התנהגותו.
+
+    Responsibility: Parses a textual board representation into a Board object.
+
+    אחריות: מייצגת את רכיב השרת ``TextBoardParser`` ומרכזת את התנהגותו."""
 
     @staticmethod
     def _is_valid_token(token: str) -> bool:
-        """
-        Returns True if the given token is a valid board cell.
-        """
+        """Returns True if the given token is a valid board cell.
+
+        בודקת אם ``valid`` האסימון."""
 
         if token == EMPTY_SQUARE:
             return True
@@ -39,9 +43,9 @@ class TextBoardParser:
 
     @staticmethod
     def parse(board_lines: list[str]) -> Board:
-        """
-        Creates a Board from its textual representation.
-        """
+        """Creates a Board from its textual representation.
+
+        מבצעת את פעולת ``parse``."""
 
         if not board_lines:
             return Board([])

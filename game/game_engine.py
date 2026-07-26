@@ -33,9 +33,13 @@ from rules.rule_engine import RuleEngine
 from model.piece import Piece, PieceColor, PieceType
 
 class GameEngine:
-	"""
-	Coordinates game services and exposes a stable facade API.
-	"""
+	"""Coordinates game services and exposes a stable facade API.
+
+    מייצגת את רכיב השרת ``GameEngine`` ומרכזת את התנהגותו.
+
+    Responsibility: Coordinates game services and exposes a stable facade API.
+
+    אחריות: מייצגת את רכיב השרת ``GameEngine`` ומרכזת את התנהגותו."""
 
 	def __init__(
 		self,
@@ -46,7 +50,10 @@ class GameEngine:
 		player_activity: PlayerActivityService | None = None,
 		event_bus: EventBus | None = None,
 	):
-		self._event_bus = event_bus or EventBus()
+		"""Initialize the instance and its dependencies.
+
+     מאתחלת את המופע ואת התלויות שלו."""
+     self._event_bus = event_bus or EventBus()
 		self._player_activity = player_activity or PlayerActivityService()
 		arbiter.set_player_activity(self._player_activity)
 		arbiter.set_event_bus(self._event_bus)
@@ -64,20 +71,30 @@ class GameEngine:
 
 	@property
 	def board(self) -> Board:
-		return self._query_service.board
+		"""Perform the board operation.
+
+     מבצעת את פעולת הלוח."""
+     return self._query_service.board
 
 	@property
 	def game_over(self) -> bool:
-		return self._state_service.game_over
+		"""Perform the game over operation.
+
+     מבצעת את פעולת המשחק ``over``."""
+     return self._state_service.game_over
 
 	@property
 	def player_activity(self) -> PlayerActivityService:
-		"""Returns the action and score data for the current game."""
+		"""Returns the action and score data for the current game.
+
+     מבצעת את פעולת השחקן פעילות."""
 		return self._player_activity
 
 	@property
 	def event_bus(self) -> EventBus:
-		"""Returns the message bus owned by this game instance."""
+		"""Returns the message bus owned by this game instance.
+
+     מבצעת את פעולת אירוע ערוץ האירועים."""
 		return self._event_bus
 
 	def request_move(
@@ -85,9 +102,9 @@ class GameEngine:
 		source: Position,
 		target: Position,
 	) -> MoveResult:
-		"""
-		Attempts to perform a move.
-		"""
+		"""Attempts to perform a move.
+
+     מבקשת את המהלך."""
 
 		if self.game_over:
 			return MoveResult.rejected(
@@ -103,7 +120,10 @@ class GameEngine:
 		self,
 		milliseconds: int,
 	) -> None:
-		was_game_over = self.game_over
+		"""Perform the wait operation.
+
+     מבצעת את פעולת ``wait``."""
+     was_game_over = self.game_over
 		self._state_service.wait(milliseconds)
 		if not was_game_over and self.game_over:
 			self._event_bus.publish(
@@ -114,9 +134,9 @@ class GameEngine:
 		self,
 		position: Position,
 	) -> None:
-		"""
-		Marks a piece as airborne.
-		"""
+		"""Marks a piece as airborne.
+
+     מבצעת את פעולת קפיצה."""
 
 		piece = self._query_service.get_piece(position)
 
@@ -137,32 +157,43 @@ class GameEngine:
 		)
 
 	def is_inside(self, position: Position) -> bool:
-		return self._query_service.is_inside(position)
+		"""Check whether inside.
+
+     בודקת אם ``inside``."""
+     return self._query_service.is_inside(position)
 
 	def get_piece(self, position: Position) -> object | None:
-		return self._query_service.get_piece(position)
+		"""Return piece.
+
+     מחזירה את הכלי."""
+     return self._query_service.get_piece(position)
 
 	def has_piece(self, position: Position) -> bool:
-		return self._query_service.has_piece(position)
+		"""Check whether there is piece.
+
+     בודקת אם קיים הכלי."""
+     return self._query_service.has_piece(position)
 
 	def get_legal_moves(
 		self,
 		source: Position,
 	) -> set[Position]:
-		"""
-		Returns all legal destination positions for the piece at source.
-		Used by the UI to display legal move indicators.
-		"""
+		"""Returns all legal destination positions for the piece at source.
+     		Used by the UI to display legal move indicators.
+
+     מחזירה את ``legal`` המהלכים."""
 		return self._request_move_service.get_legal_moves(source)
 
 	def get_motions(self) -> tuple:
-		"""
-		Returns an immutable snapshot of all active motions for UI interpolation.
-		"""
+		"""Returns an immutable snapshot of all active motions for UI interpolation.
+
+     מחזירה את ``motions``."""
 		return self._state_service.get_active_motions()
 
 	def get_winner(self) -> PieceColor | None:
-		"""Returns the color whose king remains on the board, if any."""
+		"""Returns the color whose king remains on the board, if any.
+
+     מחזירה את המנצח."""
 		white_king_alive = self._has_king(PieceColor.WHITE)
 		black_king_alive = self._has_king(PieceColor.BLACK)
 
@@ -173,10 +204,15 @@ class GameEngine:
 		return None
 
 	def get_board(self) -> Board:
-		return self._query_service.board
+		"""Return board.
+
+     מחזירה את הלוח."""
+     return self._query_service.board
 
 	def _has_king(self, color: PieceColor) -> bool:
-		"""Checks the current board without exposing winner-resolution details."""
+		"""Checks the current board without exposing winner-resolution details.
+
+     בודקת אם קיים ``king``."""
 		board = self._query_service.board
 		for row in range(board.height):
 			for column in range(board.width):

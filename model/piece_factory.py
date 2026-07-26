@@ -7,11 +7,15 @@ from model.piece import Piece, PieceState
 
 
 class PieceFactory:
-    """
-    Responsible for creating Piece objects.
+    """Responsible for creating Piece objects.
 
-    It only creates Piece instances from already parsed data.
-    """
+        It only creates Piece instances from already parsed data.
+
+    מייצגת את רכיב השרת ``PieceFactory`` ומרכזת את התנהגותו.
+
+    Responsibility: Responsible for creating Piece objects.
+
+    אחריות: מייצגת את רכיב השרת ``PieceFactory`` ומרכזת את התנהגותו."""
 
     _next_piece_id = 1
 
@@ -21,19 +25,19 @@ class PieceFactory:
         piece_data,
         position: Position,
     ) -> Piece | None:
-        """
-        Creates a Piece object.
+        """Creates a Piece object.
 
-        Args:
-            piece_data:
-                Result returned by PieceMapper.from_code().
-                None means the board cell is empty.
-            position:
-                Piece position on the board.
+                Args:
+                    piece_data:
+                        Result returned by PieceMapper.from_code().
+                        None means the board cell is empty.
+                    position:
+                        Piece position on the board.
 
-        Returns:
-            Piece or None.
-        """
+                Returns:
+                    Piece or None.
+
+        יוצרת את הכלי."""
 
         if piece_data is None:
             return None

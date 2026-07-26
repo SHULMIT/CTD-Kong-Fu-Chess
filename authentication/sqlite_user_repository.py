@@ -5,17 +5,28 @@ import sqlite3
 
 from authentication.errors import UsernameTakenError
 from authentication.user import User
-from authentication.user_repository import StoredUser
+from authentication.user_repository import StoredUser, UserRepository
 
 
-class SQLiteUserRepository:
-    """Creates and queries a migration-safe SQLite users table."""
+class SQLiteUserRepository(UserRepository):
+    """Creates and queries a migration-safe SQLite users table.
+
+    מייצגת את רכיב השרת ``SQLiteUserRepository`` ומרכזת את התנהגותו.
+
+    Responsibility: Creates and queries a migration-safe SQLite users table.
+
+    אחריות: מייצגת את רכיב השרת ``SQLiteUserRepository`` ומרכזת את התנהגותו."""
 
     def __init__(self, database_path: str | Path) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._database_path = Path(database_path)
 
     def initialize(self) -> None:
-        """Create the database and users table if they don't already exist."""
+        """Create the database and users table if they don't already exist.
+
+        מבצעת את פעולת ``initialize``."""
         self._database_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.execute(
@@ -45,7 +56,9 @@ class SQLiteUserRepository:
             )
 
     def create(self, username: str, password_hash: str, rating: int) -> User:
-        """Persist and return a new account."""
+        """Persist and return a new account.
+
+        מבצעת את פעולת ``create``."""
         try:
             with self._connect() as connection:
                 cursor = connection.execute(
@@ -61,7 +74,9 @@ class SQLiteUserRepository:
         return User(id=user_id, username=username, rating=rating)
 
     def find_by_username(self, username: str) -> StoredUser | None:
-        """Return a stored account by its unique username."""
+        """Return a stored account by its unique username.
+
+        מאתרת ומחזירה את ``by`` שם המשתמש."""
         with self._connect() as connection:
             row = connection.execute(
                 """
@@ -86,7 +101,9 @@ class SQLiteUserRepository:
         winner_rating: int,
         loser_rating: int,
     ) -> bool:
-        """Atomically record a unique result and update both ratings."""
+        """Atomically record a unique result and update both ratings.
+
+        מחילה את הדירוג ``update``."""
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -136,6 +153,9 @@ class SQLiteUserRepository:
         connection: sqlite3.Connection,
         game_id: str,
     ) -> bool:
+        """Perform the game result exists operation.
+
+        מבצעת את פעולת המשחק התוצאה ``exists``."""
         row = connection.execute(
             "SELECT 1 FROM game_results WHERE game_id = ?",
             (game_id,),
@@ -143,6 +163,9 @@ class SQLiteUserRepository:
         return row is not None
 
     def _connect(self) -> sqlite3.Connection:
+        """Perform the connect operation.
+
+        מבצעת את פעולת ``connect``."""
         connection = sqlite3.connect(self._database_path)
         connection.execute("PRAGMA foreign_keys = ON")
         return connection

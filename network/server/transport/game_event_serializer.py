@@ -15,10 +15,18 @@ from network.server.transport.game_snapshot_serializer import JsonValue
 
 
 class GameEventSerializer:
-    """Converts supported domain events into explicit network payloads."""
+    """Converts supported domain events into explicit network payloads.
+
+    ממיר אירועי תחום נתמכים למטעני רשת מפורשים.
+
+    Responsibility: Converts supported domain events into explicit network payloads.
+
+    אחריות: ממיר אירועי תחום נתמכים למטעני רשת מפורשים."""
 
     def serialize(self, event: Event) -> dict[str, JsonValue]:
-        """Return a JSON-safe payload for a server-observed game event."""
+        """Return a JSON-safe payload for a server-observed game event.
+
+        מחזירה מטען בטוח ל־JSON עבור אירוע משחק שנצפה בשרת."""
         if isinstance(event, MoveStartedEvent):
             return self._serialize_move(GameEventType.MOVE_STARTED, event)
         if isinstance(event, MoveCompletedEvent):
@@ -45,6 +53,9 @@ class GameEventSerializer:
         event_type: GameEventType,
         event: MoveStartedEvent | MoveCompletedEvent,
     ) -> dict[str, JsonValue]:
+        """Serialize a move event for transport.
+
+        ממירה אירוע תנועה לייצוג המיועד לתעבורה."""
         return {
             "type": event_type.value,
             "piece_id": event.piece_id,
@@ -57,6 +68,9 @@ class GameEventSerializer:
         event_type: GameEventType,
         event: JumpStartedEvent | JumpCompletedEvent,
     ) -> dict[str, JsonValue]:
+        """Serialize a jump event for transport.
+
+        ממירה אירוע קפיצה לייצוג המיועד לתעבורה."""
         return {
             "type": event_type.value,
             "piece_id": event.piece_id,
@@ -65,4 +79,7 @@ class GameEventSerializer:
 
     @staticmethod
     def _position(position: Position) -> dict[str, JsonValue]:
+        """Serialize a board position for transport.
+
+        ממירה מיקום על הלוח לייצוג המיועד לתעבורה."""
         return {"row": position.row, "column": position.column}

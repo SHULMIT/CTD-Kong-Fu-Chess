@@ -36,23 +36,33 @@ PIECE_CODE_FROM_TYPE = {
 
 
 class PieceMapper:
-    """
-    Converts between textual board codes and Piece information.
-    """
+    """Converts between textual board codes and Piece information.
+
+    מייצגת את רכיב השרת ``PieceMapper`` ומרכזת את התנהגותו.
+
+    Responsibility: Converts between textual board codes and Piece information.
+
+    אחריות: מייצגת את רכיב השרת ``PieceMapper`` ומרכזת את התנהגותו."""
 
     @staticmethod
     def color_from_code(code: str) -> PieceColor:
-        """Converts 'w' or 'b' into PieceColor."""
+        """Converts 'w' or 'b' into PieceColor.
+
+        מבצעת את פעולת צבע ``from`` ``code``."""
         return PIECE_COLOR_FROM_CODE[code]
 
     @staticmethod
     def type_from_code(code: str) -> PieceType:
-        """Converts 'P', 'R', ... into PieceType."""
+        """Converts 'P', 'R', ... into PieceType.
+
+        מבצעת את פעולת ``type`` ``from`` ``code``."""
         return PIECE_TYPE_FROM_CODE[code]
 
     @staticmethod
     def from_code(code: str) -> tuple[PieceType, PieceColor] | None:
-        """Converts a textual board token like 'wP' into piece metadata."""
+        """Converts a textual board token like 'wP' into piece metadata.
+
+        מבצעת את פעולת ``from`` ``code``."""
         if code == EMPTY_SQUARE:
             return None
 
@@ -63,9 +73,9 @@ class PieceMapper:
 
     @staticmethod
     def to_code(piece: Piece | None) -> str:
-        """
-        Converts a Piece into its board representation.
-        """
+        """Converts a Piece into its board representation.
+
+        מבצעת את פעולת ``to`` ``code``."""
 
         if piece is None or piece == EMPTY_SQUARE:
             return EMPTY_SQUARE

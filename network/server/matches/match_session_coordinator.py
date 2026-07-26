@@ -20,7 +20,13 @@ from spectators.spectator_service import SpectatableGame
 
 
 class MatchSessionCoordinator:
-    """Owns one active match's players, resume timers, and terminal cleanup."""
+    """Owns one active match's players, resume timers, and terminal cleanup.
+
+    מנהלת את שחקני המשחק הפעיל, זמני החידוש והניקוי הסופי.
+
+    Responsibility: Owns one active match's players, resume timers, and terminal cleanup.
+
+    אחריות: מנהלת את שחקני המשחק הפעיל, זמני החידוש והניקוי הסופי."""
 
     def __init__(
         self,
@@ -36,6 +42,9 @@ class MatchSessionCoordinator:
         profile_provider: Callable[[], list[JsonValue]],
         logger: logging.Logger,
     ) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._sessions = sessions
         self._matchmaking = matchmaking
         self._rooms = rooms
@@ -51,7 +60,9 @@ class MatchSessionCoordinator:
         self.game_id = str(uuid4())
 
     async def start_match(self, match: Match) -> None:
-        """Assign colors and continue the existing authoritative start flow."""
+        """Assign colors and continue the existing authoritative start flow.
+
+        מקצה צבעים וממשיכה את תהליך תחילת המשחק הסמכותי."""
         if self._sessions.clients:
             self._matchmaking.disconnect(match.white.client)
             self._matchmaking.disconnect(match.black.client)
@@ -94,7 +105,9 @@ class MatchSessionCoordinator:
             self._matchmaking.mark_in_game(connection)
 
     async def disconnect(self, connection: object) -> None:
-        """Clean waiting clients or begin the active-player resume window."""
+        """Clean waiting clients or begin the active-player resume window.
+
+        מנקה לקוחות ממתינים או פותחת חלון חידוש לשחקן פעיל שהתנתק."""
         spectator_game = self._spectator_handler.leave(connection)
         if spectator_game is not None:
             self._log("spectator_left", game_id=spectator_game)
@@ -135,7 +148,9 @@ class MatchSessionCoordinator:
         )
 
     async def resume(self, connection: MessageConnection, token: object) -> None:
-        """Attach a validated replacement connection to the existing match."""
+        """Attach a validated replacement connection to the existing match.
+
+        מצמידה חיבור חלופי שאומת למשחק הקיים."""
         result = self._reconnect.resume(connection, token)
         if result is None:
             await self._messenger.send(
@@ -178,7 +193,9 @@ class MatchSessionCoordinator:
             )
 
     async def finish_game(self, winner: PieceColor | None) -> None:
-        """Finalize ratings and close all read-only views for this game."""
+        """Finalize ratings and close all read-only views for this game.
+
+        מסיימת דירוגים וסוגרת את כל תצוגות הצפייה של משחק זה."""
         await self._cancel_all_disconnect_tasks()
         if winner is not None:
             await self._ratings.finalize(winner)
@@ -186,11 +203,16 @@ class MatchSessionCoordinator:
         await self._spectator_handler.close_game(self.game_id)
 
     async def close(self) -> None:
-        """Cancel owned timeout work and release reconnect session state."""
+        """Cancel owned timeout work and release reconnect session state.
+
+        מבטלת משימות timeout שבבעלותה ומשחררת מצב חיבור מחדש."""
         await self._cancel_all_disconnect_tasks()
         self._reconnect.cleanup()
 
     async def _wait_for_timeout(self, notice: DisconnectNotice) -> None:
+        """Wait for a reconnect deadline and process a forfeit.
+
+        ממתינה למועד החיבור מחדש ומטפלת בהפסד טכני."""
         try:
             delay = max(0.0, notice.deadline - datetime.now(timezone.utc).timestamp())
             await asyncio.sleep(delay)
@@ -236,6 +258,9 @@ class MatchSessionCoordinator:
                 self._disconnect_tasks.pop(notice.user.id, None)
 
     async def _cancel_disconnect_task(self, user_id: int) -> None:
+        """Cancel a participant's pending disconnect task.
+
+        מבטלת משימת ניתוק ממתינה של משתתף."""
         task = self._disconnect_tasks.pop(user_id, None)
         if task is None or task is asyncio.current_task():
             return
@@ -243,6 +268,9 @@ class MatchSessionCoordinator:
         await asyncio.gather(task, return_exceptions=True)
 
     async def _cancel_all_disconnect_tasks(self) -> None:
+        """Cancel every pending disconnect task.
+
+        מבטלת את כל משימות הניתוק הממתינות."""
         current = asyncio.current_task()
         tasks = tuple(
             task for task in self._disconnect_tasks.values() if task is not current
@@ -259,5 +287,8 @@ class MatchSessionCoordinator:
         level: int = logging.INFO,
         **context: object,
     ) -> None:
+        """Write a structured server event to the configured logger.
+
+        כותבת אירוע שרת מובנה ללוגר שהוגדר."""
         safe = {key: value for key, value in context.items() if value is not None}
         self._logger.log(level, event_type, extra={"event_type": event_type, **safe})

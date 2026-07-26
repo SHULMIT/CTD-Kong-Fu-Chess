@@ -11,9 +11,18 @@ from network.server.matches.session_manager import SessionManager
 
 
 class GameCommandHandler:
-    """Executes parsed commands through the authoritative game API."""
+    """Executes parsed commands through the authoritative game API.
+
+    מבצעת פקודות מפוענחות דרך ממשק המשחק הסמכותי של השרת.
+
+    Responsibility: Executes parsed commands through the authoritative game API.
+
+    אחריות: מבצעת פקודות מפוענחות דרך ממשק המשחק הסמכותי של השרת."""
 
     def __init__(self, game_engine: GameEngine, sessions: SessionManager) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._game_engine = game_engine
         self._sessions = sessions
 
@@ -22,7 +31,9 @@ class GameCommandHandler:
         connection: object,
         command: NetworkCommand,
     ) -> dict[str, JsonValue]:
-        """Authorize ownership and return the existing protocol response."""
+        """Authorize ownership and return the existing protocol response.
+
+        מאמתת בעלות על כלי, מבצעת פקודה ומחזירה תגובת פרוטוקול."""
         if self._game_engine.game_over:
             return ClientMessenger.rejection("game_over")
         position = command.source if isinstance(command, MoveCommand) else command.position
@@ -51,6 +62,9 @@ class GameCommandHandler:
         return {"type": "command_accepted", "command": "jump"}
 
     def _controlled_piece(self, connection: object, position: Position) -> Piece | str:
+        """Return the piece controlled by the requesting client.
+
+        מחזירה את הכלי שבשליטת הלקוח המבקש."""
         if not self._game_engine.is_inside(position):
             return "missing_piece"
         piece = self._game_engine.get_piece(position)
@@ -62,4 +76,7 @@ class GameCommandHandler:
 
     @staticmethod
     def serialize_position(position: Position) -> dict[str, JsonValue]:
+        """Serialize a board position for a command response.
+
+        ממירה מיקום על הלוח לתגובת פקודה."""
         return {"row": position.row, "column": position.column}

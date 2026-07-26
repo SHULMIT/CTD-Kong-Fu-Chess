@@ -20,7 +20,13 @@ from spectators.spectator_service import SpectatorService
 
 
 class LobbyHandler:
-    """Coordinates waiting-state actions and requests match creation."""
+    """Coordinates waiting-state actions and requests match creation.
+
+    מתאמת פעולות במצב המתנה ומבקשת יצירת משחק.
+
+    Responsibility: Coordinates waiting-state actions and requests match creation.
+
+    אחריות: מתאמת פעולות במצב המתנה ומבקשת יצירת משחק."""
 
     def __init__(
         self,
@@ -34,6 +40,9 @@ class LobbyHandler:
         start_match: Callable[[Match], Awaitable[None]],
         logger: logging.Logger,
     ) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._authentication = authentication
         self.matchmaking = matchmaking
         self.rooms = rooms
@@ -45,6 +54,9 @@ class LobbyHandler:
         self._logger = logger
 
     async def start_matchmaking(self, connection: MessageConnection) -> None:
+        """Place an authenticated client into the matchmaking queue.
+
+        מכניסה לקוח מאומת לתור השידוכים."""
         if self.rooms.contains(connection) or self._spectators.is_spectator(connection):
             await self._messenger.reject(connection, "invalid_state")
             return
@@ -68,6 +80,9 @@ class LobbyHandler:
         )
 
     async def cancel_matchmaking(self, connection: MessageConnection) -> None:
+        """Remove a client from the matchmaking queue.
+
+        מסירה לקוח מתור השידוכים."""
         if self.matchmaking.cancel(connection):
             user = self._authentication.lookup(connection)
             self._log(
@@ -80,6 +95,9 @@ class LobbyHandler:
         await self._messenger.reject(connection, "not_searching")
 
     async def create_room(self, connection: MessageConnection) -> None:
+        """Create a private room for an authenticated client.
+
+        יוצרת חדר פרטי עבור לקוח מאומת."""
         if not self._can_create_room(connection):
             await self._room_error(connection, "invalid_state")
             return
@@ -102,6 +120,9 @@ class LobbyHandler:
         connection: MessageConnection,
         room_code: object,
     ) -> None:
+        """Join an authenticated client to a private room.
+
+        מצרפת לקוח מאומת לחדר פרטי."""
         if not self._can_join_room(connection):
             await self._room_error(connection, "invalid_state")
             return
@@ -146,6 +167,9 @@ class LobbyHandler:
         self.rooms.release_match(room_match.room_code)
 
     async def cancel_room(self, connection: MessageConnection) -> None:
+        """Cancel the private room owned by a client.
+
+        מבטלת את החדר הפרטי שבבעלות הלקוח."""
         try:
             room_code = self.rooms.cancel(connection)
         except PrivateRoomError as error:
@@ -157,9 +181,15 @@ class LobbyHandler:
         self._log("room_canceled", room_code=room_code)
 
     def _can_create_room(self, connection: object) -> bool:
+        """Return whether the client may create a private room.
+
+        בודקת אם הלקוח רשאי ליצור חדר פרטי."""
         return self._can_join_room(connection) and not self._sessions.clients
 
     def _can_join_room(self, connection: object) -> bool:
+        """Return whether the client may join a private room.
+
+        בודקת אם הלקוח רשאי להצטרף לחדר פרטי."""
         return (
             self.matchmaking.state_for(connection) is MatchmakingState.IDLE
             and not self.rooms.contains(connection)
@@ -167,8 +197,14 @@ class LobbyHandler:
         )
 
     async def _room_error(self, connection: MessageConnection, reason: str) -> None:
+        """Send a private-room error response to the client.
+
+        שולחת ללקוח תגובת שגיאה הקשורה לחדר פרטי."""
         await self._messenger.send(connection, {"type": "room_error", "reason": reason})
 
     def _log(self, event_type: str, **context: object) -> None:
+        """Write a structured server event to the configured logger.
+
+        כותבת אירוע שרת מובנה ללוגר שהוגדר."""
         safe = {key: value for key, value in context.items() if value is not None}
         self._logger.info(event_type, extra={"event_type": event_type, **safe})

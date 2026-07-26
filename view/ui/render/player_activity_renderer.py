@@ -8,6 +8,7 @@ from game.player_activity_service import PlayerAction, PlayerActivityService
 from model.piece import PieceColor
 from view.ui.layout.board_layout import BoardLayout
 from view.ui.window.game_canvas import GameCanvas
+from view.ui.render.visual_style import GamePalette, draw_rounded_panel
 
 
 class PlayerActivityRenderer:
@@ -59,15 +60,7 @@ class PlayerActivityRenderer:
         image = self._canvas.canvas.img
         y = self._layout.cells_y
         height = self._layout.inner_board_size
-        overlay = image.copy()
-        cv2.rectangle(
-            overlay,
-            (x, y),
-            (x + width, y + height),
-            (25, 25, 25),
-            -1,
-        )
-        cv2.addWeighted(overlay, 0.78, image, 0.22, 0, image)
+        draw_rounded_panel(image, x, y, width, height, radius=18, opacity=0.84)
 
         padding = 18
         font = cv2.FONT_HERSHEY_DUPLEX
@@ -78,7 +71,7 @@ class PlayerActivityRenderer:
         score = self._player_activity.get_score(player)
         profile_getter = getattr(self._player_activity, "get_profile", None)
         profile = profile_getter(player) if profile_getter is not None else None
-        header_color = (230, 230, 230)
+        header_color = GamePalette.TEXT
 
         cv2.putText(
             image,
@@ -103,7 +96,7 @@ class PlayerActivityRenderer:
                 (text_x, text_y + 65),
                 font,
                 1.25,
-                (245, 245, 245),
+                GamePalette.MUTED_TEXT,
                 2,
                 cv2.LINE_AA,
             )
@@ -115,7 +108,7 @@ class PlayerActivityRenderer:
             (text_x, text_y + score_offset),
             font,
             body_scale,
-            (0, 215, 255),
+            GamePalette.ACCENT,
             2,
             cv2.LINE_AA,
         )
@@ -148,7 +141,7 @@ class PlayerActivityRenderer:
             (x, y),
             cv2.FONT_HERSHEY_DUPLEX,
             1.56,
-            (245, 245, 245),
+            GamePalette.MUTED_TEXT,
             2,
             cv2.LINE_AA,
         )

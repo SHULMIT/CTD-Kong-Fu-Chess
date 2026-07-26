@@ -28,9 +28,13 @@ from rules.pawn_rule import PawnRule
 
 
 class RuleEngine:
-    """
-    Validates moves using the appropriate movement rule.
-    """
+    """Validates moves using the appropriate movement rule.
+
+    מייצגת את רכיב השרת ``RuleEngine`` ומרכזת את התנהגותו.
+
+    Responsibility: Validates moves using the appropriate movement rule.
+
+    אחריות: מייצגת את רכיב השרת ``RuleEngine`` ומרכזת את התנהגותו."""
 
     _RULES = {
         PieceType.ROOK: RookRule(),
@@ -47,9 +51,9 @@ class RuleEngine:
         source: Position,
         target: Position,
     ) -> MoveValidation:
-        """
-        Returns whether a move is legal.
-        """
+        """Returns whether a move is legal.
+
+        מאמתת את המהלך."""
 
         validation = self._validate_basic_rules(
             board,
@@ -83,9 +87,9 @@ class RuleEngine:
         board: Board,
         piece: Piece,
     ) -> set[Position]:
-        """
-        Returns every legal destination for the given piece.
-        """
+        """Returns every legal destination for the given piece.
+
+        מחזירה את ``legal`` המהלכים."""
 
         rule = self._get_rule(piece.type)
 
@@ -98,9 +102,9 @@ class RuleEngine:
         self,
         piece_type: PieceType,
     ) -> MovementRule:
-        """
-        Returns the movement rule matching the given piece type.
-        """
+        """Returns the movement rule matching the given piece type.
+
+        מחזירה את ``rule``."""
 
         return self._RULES[piece_type]
 
@@ -110,9 +114,9 @@ class RuleEngine:
         source: Position,
         target: Position,
     ) -> MoveValidation | None:
-        """
-        Performs validations that are independent of piece movement.
-        """
+        """Performs validations that are independent of piece movement.
+
+        מאמתת את ``basic`` ``rules``."""
 
         if not board.is_inside(source):
             return MoveValidation(

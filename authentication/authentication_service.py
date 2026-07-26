@@ -12,7 +12,13 @@ from authentication.user_repository import UserRepository
 
 
 class AuthenticationService:
-    """Registers and authenticates users without transport dependencies."""
+    """Registers and authenticates users without transport dependencies.
+
+    מייצגת את רכיב השרת ``AuthenticationService`` ומרכזת את התנהגותו.
+
+    Responsibility: Registers and authenticates users without transport dependencies.
+
+    אחריות: מייצגת את רכיב השרת ``AuthenticationService`` ומרכזת את התנהגותו."""
 
     INITIAL_RATING = 1200
     _USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_]{3,32}$")
@@ -22,15 +28,22 @@ class AuthenticationService:
         repository: UserRepository,
         password_hasher: ScryptPasswordHasher | None = None,
     ) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._repository = repository
         self._password_hasher = password_hasher or ScryptPasswordHasher()
 
     def initialize(self) -> None:
-        """Initialize persistence without destroying existing accounts."""
+        """Initialize persistence without destroying existing accounts.
+
+        מבצעת את פעולת ``initialize``."""
         self._repository.initialize()
 
     def register(self, username: object, password: object) -> User:
-        """Validate and create a uniquely named account."""
+        """Validate and create a uniquely named account.
+
+        מבצעת את פעולת ``register``."""
         username_value, password_value = self._validate(username, password)
         password_hash = self._password_hasher.hash(password_value)
         return self._repository.create(
@@ -40,7 +53,9 @@ class AuthenticationService:
         )
 
     def login(self, username: object, password: object) -> User:
-        """Return the authenticated account or raise a safe credential error."""
+        """Return the authenticated account or raise a safe credential error.
+
+        מבצעת את פעולת ``login``."""
         username_value, password_value = self._validate(username, password)
         stored_user = self._repository.find_by_username(username_value)
         if stored_user is None or not self._password_hasher.verify(
@@ -51,12 +66,17 @@ class AuthenticationService:
         return stored_user.user
 
     def current_user(self, username: str) -> User | None:
-        """Return the latest persisted public profile for an authenticated name."""
+        """Return the latest persisted public profile for an authenticated name.
+
+        מבצעת את פעולת ``current`` המשתמש."""
         stored_user = self._repository.find_by_username(username)
         return stored_user.user if stored_user is not None else None
 
     @classmethod
     def _validate(cls, username: object, password: object) -> tuple[str, str]:
+        """Perform the validate operation.
+
+        מבצעת את פעולת ``validate``."""
         if not isinstance(username, str) or not isinstance(password, str):
             raise AuthenticationValidationError()
         if cls._USERNAME_PATTERN.fullmatch(username) is None:

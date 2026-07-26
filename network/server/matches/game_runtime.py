@@ -8,7 +8,13 @@ from network.server.transport.game_snapshot_serializer import GameSnapshotSerial
 
 
 class GameRuntime:
-    """Advances the engine under the command lock and publishes changed state."""
+    """Advances the engine under the command lock and publishes changed state.
+
+    מקדמת את המנוע תחת נעילת הפקודות ומפרסמת מצב שהשתנה.
+
+    Responsibility: Advances the engine under the command lock and publishes changed state.
+
+    אחריות: מקדמת את המנוע תחת נעילת הפקודות ומפרסמת מצב שהשתנה."""
 
     def __init__(
         self,
@@ -18,6 +24,9 @@ class GameRuntime:
         broadcast: Callable[[dict[str, JsonValue]], Awaitable[None]],
         interval_seconds: float = 0.016,
     ) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._game_engine = game_engine
         self._serializer = serializer
         self._command_lock = command_lock
@@ -25,7 +34,9 @@ class GameRuntime:
         self._interval_seconds = interval_seconds
 
     async def run(self) -> None:
-        """Continuously advance realtime state until the task is cancelled."""
+        """Continuously advance realtime state until the task is cancelled.
+
+        מקדמת ברציפות את מצב הזמן האמיתי עד לביטול המשימה."""
         loop = asyncio.get_running_loop()
         previous_time = loop.time()
         while True:

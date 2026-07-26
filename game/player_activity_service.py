@@ -11,7 +11,13 @@ from model.position import Position
 
 @dataclass(frozen=True)
 class PlayerAction:
-    """A player action with a timezone-aware UTC occurrence timestamp."""
+    """A player action with a timezone-aware UTC occurrence timestamp.
+
+    מייצגת את רכיב השרת ``PlayerAction`` ומרכזת את התנהגותו.
+
+    Responsibility: A player action with a timezone-aware UTC occurrence timestamp.
+
+    אחריות: מייצגת את רכיב השרת ``PlayerAction`` ומרכזת את התנהגותו."""
 
     player: PieceColor
     description: str
@@ -19,7 +25,13 @@ class PlayerAction:
 
 
 class PlayerActivityService:
-    """Owns player-visible action history and capture scores."""
+    """Owns player-visible action history and capture scores.
+
+    מייצגת את רכיב השרת ``PlayerActivityService`` ומרכזת את התנהגותו.
+
+    Responsibility: Owns player-visible action history and capture scores.
+
+    אחריות: מייצגת את רכיב השרת ``PlayerActivityService`` ומרכזת את התנהגותו."""
 
     _PIECE_POINTS = {
         PieceType.PAWN: 1,
@@ -31,6 +43,9 @@ class PlayerActivityService:
     }
 
     def __init__(self, clock: Callable[[], datetime] = utc_now) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._clock = clock
         self._actions = {
             PieceColor.WHITE: [],
@@ -48,7 +63,9 @@ class PlayerActivityService:
         source: Position,
         target: Position,
     ) -> None:
-        """Records a successfully scheduled move."""
+        """Records a successfully scheduled move.
+
+        מבצעת את פעולת ``record`` המהלך."""
 
         self._record_action(
             player=player,
@@ -65,7 +82,9 @@ class PlayerActivityService:
         piece_type: PieceType,
         position: Position,
     ) -> None:
-        """Records a jump started by a player."""
+        """Records a jump started by a player.
+
+        מבצעת את פעולת ``record`` קפיצה."""
 
         self._record_action(
             player=player,
@@ -80,7 +99,9 @@ class PlayerActivityService:
         player: PieceColor,
         captured_piece_type: PieceType,
     ) -> None:
-        """Awards points to the player who captured a piece."""
+        """Awards points to the player who captured a piece.
+
+        מבצעת את פעולת ``record`` ``capture``."""
 
         self._scores[player] += self._PIECE_POINTS[captured_piece_type]
 
@@ -88,7 +109,9 @@ class PlayerActivityService:
         self,
         player: PieceColor,
     ) -> tuple[PlayerAction, ...]:
-        """Returns the player's actions in execution order."""
+        """Returns the player's actions in execution order.
+
+        מחזירה את ``actions``."""
 
         return tuple(self._actions[player])
 
@@ -96,7 +119,9 @@ class PlayerActivityService:
         self,
         player: PieceColor,
     ) -> int:
-        """Returns the player's accumulated capture score."""
+        """Returns the player's accumulated capture score.
+
+        מחזירה את התוצאה."""
 
         return self._scores[player]
 
@@ -105,6 +130,9 @@ class PlayerActivityService:
         player: PieceColor,
         description: str,
     ) -> None:
+        """Perform the record action operation.
+
+        מבצעת את פעולת ``record`` ``action``."""
         history = self._actions[player]
         history.append(
             PlayerAction(
@@ -116,4 +144,7 @@ class PlayerActivityService:
 
     @staticmethod
     def _format_position(position: Position) -> str:
+        """Format position.
+
+        מעצבת את המיקום."""
         return f"{chr(ord('A') + position.column)}{8 - position.row}"

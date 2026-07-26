@@ -7,7 +7,13 @@ import os
 
 
 class ScryptPasswordHasher:
-    """Hashes and verifies passwords using the memory-hard scrypt KDF."""
+    """Hashes and verifies passwords using the memory-hard scrypt KDF.
+
+    מייצגת את רכיב השרת ``ScryptPasswordHasher`` ומרכזת את התנהגותו.
+
+    Responsibility: Hashes and verifies passwords using the memory-hard scrypt KDF.
+
+    אחריות: מייצגת את רכיב השרת ``ScryptPasswordHasher`` ומרכזת את התנהגותו."""
 
     _N = 2**14
     _R = 8
@@ -17,7 +23,9 @@ class ScryptPasswordHasher:
     _MAX_MEMORY = 32 * 1024 * 1024
 
     def hash(self, password: str) -> str:
-        """Return a versioned encoded hash; never retain plaintext input."""
+        """Return a versioned encoded hash; never retain plaintext input.
+
+        מבצעת את פעולת ערך הגיבוב."""
         salt = os.urandom(self._SALT_BYTES)
         digest = self._derive(password, salt, self._N, self._R, self._P)
         return "$".join(
@@ -32,7 +40,9 @@ class ScryptPasswordHasher:
         )
 
     def verify(self, password: str, encoded_hash: str) -> bool:
-        """Verify a password against a stored versioned hash."""
+        """Verify a password against a stored versioned hash.
+
+        מבצעת את פעולת ``verify``."""
         try:
             algorithm, n, r, p, encoded_salt, encoded_digest = (
                 encoded_hash.split("$")
@@ -55,6 +65,9 @@ class ScryptPasswordHasher:
         r: int,
         p: int,
     ) -> bytes:
+        """Perform the derive operation.
+
+        מבצעת את פעולת ``derive``."""
         return hashlib.scrypt(
             password.encode("utf-8"),
             salt=salt,

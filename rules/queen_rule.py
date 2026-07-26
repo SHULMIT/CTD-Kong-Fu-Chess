@@ -1,4 +1,4 @@
-﻿"""
+"""
 Movement rule for the queen.
 """
 
@@ -15,9 +15,13 @@ from rules.movement_utils import (
 
 
 class QueenRule(MovementRule):
-    """
-    Calculates all legal queen moves.
-    """
+    """Calculates all legal queen moves.
+
+    מייצגת את רכיב השרת ``QueenRule`` ומרכזת את התנהגותו.
+
+    Responsibility: Calculates all legal queen moves.
+
+    אחריות: מייצגת את רכיב השרת ``QueenRule`` ומרכזת את התנהגותו."""
 
     def get_legal_moves(
         self,
@@ -25,6 +29,9 @@ class QueenRule(MovementRule):
         board: Board,
     ) -> set[Position]:
 
+        """Return legal moves.
+
+        מחזירה את ``legal`` המהלכים."""
         legal_moves = set()
 
         for row_step, column_step in (

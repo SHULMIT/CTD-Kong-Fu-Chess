@@ -12,7 +12,13 @@ from authentication.user import User
 
 
 class RoomStatus(Enum):
-    """Lifecycle of a private room code."""
+    """Lifecycle of a private room code.
+
+    מייצגת את רכיב השרת ``RoomStatus`` ומרכזת את התנהגותו.
+
+    Responsibility: Lifecycle of a private room code.
+
+    אחריות: מייצגת את רכיב השרת ``RoomStatus`` ומרכזת את התנהגותו."""
 
     OPEN = "open"
     FULL = "full"
@@ -20,7 +26,13 @@ class RoomStatus(Enum):
 
 
 class PrivateRoomErrorCode(Enum):
-    """Stable domain errors translated by the WebSocket boundary."""
+    """Stable domain errors translated by the WebSocket boundary.
+
+    מייצגת את רכיב השרת ``PrivateRoomErrorCode`` ומרכזת את התנהגותו.
+
+    Responsibility: Stable domain errors translated by the WebSocket boundary.
+
+    אחריות: מייצגת את רכיב השרת ``PrivateRoomErrorCode`` ומרכזת את התנהגותו."""
 
     UNKNOWN_ROOM = "unknown_room_code"
     FULL_ROOM = "full_room"
@@ -29,16 +41,31 @@ class PrivateRoomErrorCode(Enum):
 
 
 class PrivateRoomError(ValueError):
-    """Reports a rejected room operation without transport details."""
+    """Reports a rejected room operation without transport details.
+
+    מייצגת את רכיב השרת ``PrivateRoomError`` ומרכזת את התנהגותו.
+
+    Responsibility: Reports a rejected room operation without transport details.
+
+    אחריות: מייצגת את רכיב השרת ``PrivateRoomError`` ומרכזת את התנהגותו."""
 
     def __init__(self, code: PrivateRoomErrorCode) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         super().__init__(code.value)
         self.code = code
 
 
 @dataclass
 class PrivateRoom:
-    """Server-owned waiting room with one authenticated creator."""
+    """Server-owned waiting room with one authenticated creator.
+
+    מייצגת את רכיב השרת ``PrivateRoom`` ומרכזת את התנהגותו.
+
+    Responsibility: Server-owned waiting room with one authenticated creator.
+
+    אחריות: מייצגת את רכיב השרת ``PrivateRoom`` ומרכזת את התנהגותו."""
 
     code: str
     creator_connection: object
@@ -48,7 +75,13 @@ class PrivateRoom:
 
 @dataclass(frozen=True)
 class RoomMatch:
-    """The single pairing produced when a guest fills an open room."""
+    """The single pairing produced when a guest fills an open room.
+
+    מייצגת את רכיב השרת ``RoomMatch`` ומרכזת את התנהגותו.
+
+    Responsibility: The single pairing produced when a guest fills an open room.
+
+    אחריות: מייצגת את רכיב השרת ``RoomMatch`` ומרכזת את התנהגותו."""
 
     game_id: str
     room_code: str
@@ -59,7 +92,13 @@ class RoomMatch:
 
 
 class PrivateRoomService:
-    """Creates short room codes and atomically fills each room once."""
+    """Creates short room codes and atomically fills each room once.
+
+    מייצגת את רכיב השרת ``PrivateRoomService`` ומרכזת את התנהגותו.
+
+    Responsibility: Creates short room codes and atomically fills each room once.
+
+    אחריות: מייצגת את רכיב השרת ``PrivateRoomService`` ומרכזת את התנהגותו."""
 
     _ALPHABET = string.ascii_uppercase + string.digits
 
@@ -68,6 +107,9 @@ class PrivateRoomService:
         code_length: int = 6,
         code_factory: Callable[[int], str] | None = None,
     ) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         if code_length < 4:
             raise ValueError("code_length must be at least four")
         self._code_length = code_length
@@ -77,7 +119,9 @@ class PrivateRoomService:
         self._lock = threading.RLock()
 
     def create(self, connection: object, user: User) -> PrivateRoom:
-        """Create one open room for a client that is not already in a room."""
+        """Create one open room for a client that is not already in a room.
+
+        מבצעת את פעולת ``create``."""
         with self._lock:
             if connection in self._room_by_client:
                 raise PrivateRoomError(PrivateRoomErrorCode.INVALID_STATE)
@@ -88,7 +132,9 @@ class PrivateRoomService:
             return room
 
     def join(self, code: object, connection: object, user: User) -> RoomMatch:
-        """Atomically fill an open room and return exactly one game pairing."""
+        """Atomically fill an open room and return exactly one game pairing.
+
+        מבצעת את פעולת ``join``."""
         if not isinstance(code, str):
             raise PrivateRoomError(PrivateRoomErrorCode.UNKNOWN_ROOM)
         normalized = code.strip().upper()
@@ -116,7 +162,9 @@ class PrivateRoomService:
             )
 
     def cancel(self, creator_connection: object) -> str:
-        """Close an open room owned by its creator."""
+        """Close an open room owned by its creator.
+
+        מבצעת את פעולת ``cancel``."""
         with self._lock:
             code = self._room_by_client.get(creator_connection)
             room = self._rooms.get(code) if code is not None else None
@@ -131,7 +179,9 @@ class PrivateRoomService:
             return room.code
 
     def disconnect(self, connection: object) -> str | None:
-        """Close an abandoned open room and release client membership."""
+        """Close an abandoned open room and release client membership.
+
+        מבצעת את פעולת ``disconnect``."""
         with self._lock:
             code = self._room_by_client.pop(connection, None)
             room = self._rooms.get(code) if code is not None else None
@@ -143,12 +193,16 @@ class PrivateRoomService:
             return None
 
     def contains(self, connection: object) -> bool:
-        """Return whether a client currently owns or occupies a room."""
+        """Return whether a client currently owns or occupies a room.
+
+        מבצעת את פעולת ``contains``."""
         with self._lock:
             return connection in self._room_by_client
 
     def release_match(self, room_code: str) -> None:
-        """Release connection membership after the game session takes ownership."""
+        """Release connection membership after the game session takes ownership.
+
+        מבצעת את פעולת ``release`` המשחק."""
         with self._lock:
             room = self._rooms.get(room_code)
             if room is None:
@@ -158,11 +212,16 @@ class PrivateRoomService:
                     self._room_by_client.pop(connection, None)
 
     def room(self, code: str) -> PrivateRoom | None:
-        """Return a room for diagnostics without exposing the room collection."""
+        """Return a room for diagnostics without exposing the room collection.
+
+        מבצעת את פעולת החדר."""
         with self._lock:
             return self._rooms.get(code)
 
     def _unique_code(self) -> str:
+        """Perform the unique code operation.
+
+        מבצעת את פעולת ``unique`` ``code``."""
         for _ in range(100):
             code = self._code_factory(self._code_length).upper()
             if code not in self._rooms:
@@ -171,4 +230,7 @@ class PrivateRoomService:
 
     @classmethod
     def _secure_code(cls, length: int) -> str:
+        """Perform the secure code operation.
+
+        מבצעת את פעולת ``secure`` ``code``."""
         return "".join(secrets.choice(cls._ALPHABET) for _ in range(length))

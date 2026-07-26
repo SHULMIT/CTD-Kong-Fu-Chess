@@ -23,6 +23,9 @@ DIAGONAL_DIRECTIONS = (
 
 
 def is_empty_square(piece: Piece | None) -> bool:
+    """Check whether empty square.
+
+    בודקת אם ``empty`` ``square``."""
     return piece is None or piece == Board.EMPTY_CELL
 
 
@@ -30,6 +33,9 @@ def is_enemy_piece(
     moving_piece: Piece,
     target_piece: Piece | None,
 ) -> bool:
+    """Check whether enemy piece.
+
+    בודקת אם ``enemy`` הכלי."""
     return (
         isinstance(target_piece, Piece)
         and moving_piece.color != target_piece.color
@@ -40,6 +46,9 @@ def is_friendly_piece(
     moving_piece: Piece,
     target_piece: Piece | None,
 ) -> bool:
+    """Check whether friendly piece.
+
+    בודקת אם ``friendly`` הכלי."""
     return (
         isinstance(target_piece, Piece)
         and moving_piece.color == target_piece.color
@@ -52,6 +61,9 @@ def collect_moves_in_direction(
     row_step: int,
     column_step: int,
 ) -> set[Position]:
+    """Perform the collect moves in direction operation.
+
+    מבצעת את פעולת ``collect`` המהלכים ``in`` ``direction``."""
     legal_moves = set()
 
     current_position = piece.position.offset(row_step, column_step)

@@ -32,15 +32,35 @@ from websockets.exceptions import ConnectionClosed
 
 
 class ClientConnection(Protocol):
-    """Minimum bidirectional behavior required from a WebSocket connection."""
+    """Minimum bidirectional behavior required from a WebSocket connection.
 
-    def __aiter__(self) -> AsyncIterator[str | bytes]: ...
+    מגדירה את ההתנהגות הדו־כיוונית המינימלית הנדרשת מחיבור WebSocket.
 
-    async def send(self, message: str) -> None: ...
+    Responsibility: Minimum bidirectional behavior required from a WebSocket connection.
+
+    אחריות: מגדירה את ההתנהגות הדו־כיוונית המינימלית הנדרשת מחיבור WebSocket."""
+
+    def __aiter__(self) -> AsyncIterator[str | bytes]:
+        """Return this connection as an asynchronous message iterator.
+
+        מחזירה את החיבור כאיטרטור אסינכרוני של הודעות."""
+        ...
+
+    async def send(self, message: str) -> None:
+        """Send a message through the connection.
+
+        שולחת הודעה דרך החיבור."""
+        ...
 
 
 class GameServer:
-    """Own WebSocket lifecycle and compose focused multiplayer components."""
+    """Own WebSocket lifecycle and compose focused multiplayer components.
+
+    מנהלת את מחזור החיים של WebSocket ומרכיבה רכיבי משחק ממוקדים.
+
+    Responsibility: Own WebSocket lifecycle and compose focused multiplayer components.
+
+    אחריות: מנהלת את מחזור החיים של WebSocket ומרכיבה רכיבי משחק ממוקדים."""
 
     _SIMULATION_INTERVAL_SECONDS = 0.016
 
@@ -59,6 +79,9 @@ class GameServer:
         room_service: PrivateRoomService | None = None,
         spectator_service: SpectatorService | None = None,
     ) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._game_engine = game_engine
         self._sessions = session_manager or SessionManager()
         self._command_parser = command_parser or CommandParser()
@@ -164,11 +187,15 @@ class GameServer:
 
     @property
     def game_engine(self) -> GameEngine:
-        """Return the single authoritative engine shared by all clients."""
+        """Return the single authoritative engine shared by all clients.
+
+        מחזירה את מנוע המשחק הסמכותי היחיד המשותף לכל הלקוחות."""
         return self._game_engine
 
     async def handle_client(self, connection: ClientConnection) -> None:
-        """Process one connection until it closes, then delegate cleanup."""
+        """Process one connection until it closes, then delegate cleanup.
+
+        מטפלת בחיבור אחד עד סגירתו ולאחר מכן מעבירה את הניקוי לרכיב המתאים."""
         self._events.set_loop(asyncio.get_running_loop())
         if self._authentication_service is None:
             if not await self._accept_game_client(connection):
@@ -191,15 +218,21 @@ class GameServer:
         connection: ClientConnection,
         raw_message: str | bytes,
     ) -> None:
-        """Delegate one external message to the focused message router."""
+        """Delegate one external message to the focused message router.
+
+        מעבירה הודעה חיצונית אחת למנתב ההודעות הייעודי."""
         await self._message_router.route(connection, raw_message)
 
     async def broadcast(self, message: dict[str, JsonValue]) -> None:
-        """Broadcast one JSON-safe message to players and current spectators."""
+        """Broadcast one JSON-safe message to players and current spectators.
+
+        משדרת הודעה אחת בטוחה ל־JSON לשחקנים ולצופים הנוכחיים."""
         await self._messenger.broadcast(message)
 
     async def broadcast_snapshot(self) -> None:
-        """Broadcast the current authoritative full game snapshot."""
+        """Broadcast the current authoritative full game snapshot.
+
+        משדרת את תמונת המצב המלאה והסמכותית הנוכחית של המשחק."""
         await self.broadcast(
             {
                 "type": "game_snapshot",
@@ -208,7 +241,9 @@ class GameServer:
         )
 
     async def run(self, host: str, port: int) -> None:
-        """Serve WebSocket clients and the simulation until cancellation."""
+        """Serve WebSocket clients and the simulation until cancellation.
+
+        משרתת לקוחות WebSocket ואת הסימולציה עד לביטול הפעולה."""
         self._events.set_loop(asyncio.get_running_loop())
         self._simulation_task = asyncio.create_task(self._runtime.run())
         self._log(logging.INFO, "server_started", reason=f"{host}:{port}")
@@ -220,7 +255,9 @@ class GameServer:
             self._log(logging.INFO, "server_stopped")
 
     async def close(self) -> None:
-        """Stop background work and release component-owned lifecycle state."""
+        """Stop background work and release component-owned lifecycle state.
+
+        עוצרת עבודות רקע ומשחררת מצב מחזור חיים שבבעלות הרכיבים."""
         simulation_task = self._simulation_task
         self._simulation_task = None
         if simulation_task is not None:
@@ -230,12 +267,18 @@ class GameServer:
         await self._match_sessions.close()
 
     def _broadcast_recipients(self) -> tuple[object, ...]:
+        """Return the clients eligible to receive game broadcasts.
+
+        מחזירה את הלקוחות הרשאים לקבל שידורי משחק."""
         return (
             *self._sessions.clients,
             *self._spectator_handler.spectators_for(self._match_sessions.game_id),
         )
 
     async def _accept_game_client(self, connection: ClientConnection) -> bool:
+        """Accept a client into the active game session.
+
+        מצרפת לקוח למפגש המשחק הפעיל."""
         color = self._sessions.connect(connection)
         if color is None:
             self._logger.info("Rejected client connection: game is full")
@@ -251,6 +294,9 @@ class GameServer:
         return True
 
     async def _send_snapshot(self, connection: ClientConnection) -> None:
+        """Send the current game snapshot to one client.
+
+        שולחת ללקוח אחד תמונת מצב עדכנית של המשחק."""
         await self._messenger.send(
             connection,
             {
@@ -261,18 +307,33 @@ class GameServer:
 
     # Compatibility wrappers retained for existing integrations and tests.
     async def _start_match(self, match: Match) -> None:
+        """Start a match for the selected client pair.
+
+        מתחילה משחק עבור זוג הלקוחות שנבחר."""
         await self._match_sessions.start_match(match)
 
     async def _handle_disconnect(self, connection: object) -> None:
+        """Handle a client leaving the active server session.
+
+        מטפלת בניתוק לקוח ממפגש השרת הפעיל."""
         await self._match_sessions.disconnect(connection)
 
     async def _close_spectator_views(self, game_id: str) -> None:
+        """Close all spectator views for the completed game.
+
+        סוגרת את תצוגות הצופים של המשחק שהסתיים."""
         await self._spectator_handler.close_game(game_id)
 
     async def _finalize_ratings(self, winner_color: PieceColor) -> None:
+        """Finalize player ratings after the game ends.
+
+        משלימה את עדכון דירוגי השחקנים בסיום המשחק."""
         await self._ratings.finalize(winner_color)
 
     def _log(self, level: int, event_type: str, **context: object) -> None:
+        """Write a structured server event to the configured logger.
+
+        כותבת אירוע שרת מובנה ללוגר שהוגדר."""
         safe_context = {
             key: value for key, value in context.items() if value is not None
         }

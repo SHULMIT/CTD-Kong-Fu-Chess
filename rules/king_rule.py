@@ -1,4 +1,4 @@
-﻿"""
+"""
 Movement rule for the king.
 """
 
@@ -16,9 +16,13 @@ from rules.movement_utils import (
 
 
 class KingRule(MovementRule):
-    """
-    Calculates all legal king moves.
-    """
+    """Calculates all legal king moves.
+
+    מייצגת את רכיב השרת ``KingRule`` ומרכזת את התנהגותו.
+
+    Responsibility: Calculates all legal king moves.
+
+    אחריות: מייצגת את רכיב השרת ``KingRule`` ומרכזת את התנהגותו."""
 
     def get_legal_moves(
         self,
@@ -26,6 +30,9 @@ class KingRule(MovementRule):
         board: Board,
     ) -> set[Position]:
 
+        """Return legal moves.
+
+        מחזירה את ``legal`` המהלכים."""
         legal_moves = set()
 
         for row_offset, column_offset in (

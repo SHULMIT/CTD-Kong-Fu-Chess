@@ -21,7 +21,13 @@ from network.server.transport.game_snapshot_serializer import JsonValue
 
 
 class GameEventPublisher:
-    """Turns engine events into ordered network events and completion callbacks."""
+    """Turns engine events into ordered network events and completion callbacks.
+
+    ממירה אירועי מנוע לאירועי רשת מסודרים ול־callbacks של סיום.
+
+    Responsibility: Turns engine events into ordered network events and completion callbacks.
+
+    אחריות: ממירה אירועי מנוע לאירועי רשת מסודרים ול־callbacks של סיום."""
 
     _OBSERVED_TYPES = (
         MoveStartedEvent,
@@ -41,6 +47,9 @@ class GameEventPublisher:
         game_id_provider: Callable[[], str],
         logger: logging.Logger,
     ) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._serializer = serializer
         self._broadcast = broadcast
         self._finish_game = finish_game
@@ -59,9 +68,15 @@ class GameEventPublisher:
             )
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Set the event loop used to publish game events.
+
+        מגדירה את לולאת האירועים המשמשת לפרסום אירועי משחק."""
         self._loop = loop
 
     def _on_event(self, event: Event) -> None:
+        """Receive a game event and schedule its publication.
+
+        מקבלת אירוע משחק ומתזמנת את פרסומו."""
         if self._closed:
             return
         message: dict[str, JsonValue] = {
@@ -91,7 +106,9 @@ class GameEventPublisher:
             self._schedule(loop, self._finish_game(event.winner))
 
     async def close(self) -> None:
-        """Stop observing engine events and settle all pending publications."""
+        """Stop observing engine events and settle all pending publications.
+
+        מפסיקה לצפות באירועי מנוע ומסדירה את כל הפרסומים הממתינים."""
         if self._closed:
             return
         self._closed = True
@@ -110,6 +127,9 @@ class GameEventPublisher:
         loop: asyncio.AbstractEventLoop,
         operation: Awaitable[None],
     ) -> None:
+        """Schedule a coroutine on the server event loop.
+
+        מתזמנת coroutine בלולאת האירועים של השרת."""
         task = loop.create_task(operation)
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)

@@ -16,6 +16,11 @@ from model.position import Position
 
 from view.ui.layout.board_layout import BoardLayout
 from view.ui.window.game_canvas import GameCanvas
+from view.ui.render.visual_style import (
+    GamePalette,
+    draw_rounded_panel,
+    draw_status_icon,
+)
 
 
 class OverlayRenderer:
@@ -124,11 +129,15 @@ class OverlayRenderer:
             cv2.putText(img, text, (tx, ty), font,
                         scale * 2.5, color, thickness, cv2.LINE_AA)
 
-        _centered_text("GAME OVER", 0.42, (255, 255, 255))
-        _centered_text(winner,      0.55, (0, 215, 255))
+        panel_width = min(600, w - 64)
+        draw_rounded_panel(
+            img, (w - panel_width) // 2, int(h * 0.32), panel_width, int(h * 0.3)
+        )
+        _centered_text("GAME OVER", 0.43, GamePalette.TEXT)
+        _centered_text(winner, 0.54, GamePalette.ACCENT)
 
     def draw_status_message(self, message: str) -> None:
-        """Draw a short user-feedback message below the board."""
+        """Draw a compact error notification below the board."""
         image = self._canvas.canvas.img
         center_x = self._layout.board_x + self._layout.board_size // 2
         text_y = self._layout.board_y + self._layout.board_size + 30
@@ -136,13 +145,35 @@ class OverlayRenderer:
         scale = 0.7
         thickness = 2
         (text_width, _), _ = cv2.getTextSize(message, font, scale, thickness)
+        icon_space = 42
+        padding_x = 16
+        panel_height = 48
+        panel_width = text_width + icon_space + padding_x * 2
+        panel_left = center_x - panel_width // 2
+        panel_top = text_y - 33
+        draw_rounded_panel(
+            image,
+            panel_left,
+            panel_top,
+            panel_width,
+            panel_height,
+            radius=14,
+            opacity=0.9,
+        )
+        draw_status_icon(
+            image,
+            (panel_left + padding_x + 15, panel_top + panel_height // 2),
+            GamePalette.ERROR,
+            "!",
+            radius=13,
+        )
         cv2.putText(
             image,
             message,
-            (center_x - text_width // 2, text_y),
+            (panel_left + padding_x + icon_space, text_y),
             font,
             scale,
-            (0, 0, 255),
+            GamePalette.TEXT,
             thickness,
             cv2.LINE_AA,
         )
@@ -155,15 +186,14 @@ class OverlayRenderer:
         panel_height = 300
         left = (width - panel_width) // 2
         top = (height - panel_height) // 2
-        overlay = image.copy()
-        cv2.rectangle(
-            overlay,
-            (left, top),
-            (left + panel_width, top + panel_height),
-            (20, 20, 20),
-            -1,
+        draw_rounded_panel(image, left, top, panel_width, panel_height, radius=22)
+        draw_status_icon(
+            image,
+            (left + 38, top + 42),
+            GamePalette.SUCCESS,
+            "check",
+            radius=15,
         )
-        cv2.addWeighted(overlay, 0.92, image, 0.08, 0, image)
         lines = ["MATCH STARTED", *message.splitlines()]
         for index, line in enumerate(lines):
             scale = 1.55 if index == 0 else 1.15
@@ -180,7 +210,7 @@ class OverlayRenderer:
                 ((width - text_width) // 2, top + 75 + index * 75),
                 cv2.FONT_HERSHEY_DUPLEX,
                 scale,
-                (255, 255, 255),
+                GamePalette.TEXT if index == 0 else GamePalette.MUTED_TEXT,
                 thickness,
                 cv2.LINE_AA,
             )
@@ -193,6 +223,23 @@ class OverlayRenderer:
         cv2.rectangle(overlay, (0, 0), (width, height), (15, 15, 15), -1)
         cv2.addWeighted(overlay, 0.65, image, 0.35, 0, image)
         lines = message.splitlines()
+        panel_width = min(680, width - 80)
+        panel_height = 80 + max(1, len(lines)) * 45
+        draw_rounded_panel(
+            image,
+            (width - panel_width) // 2,
+            (height - panel_height) // 2,
+            panel_width,
+            panel_height,
+        )
+        panel_left = (width - panel_width) // 2
+        panel_top = (height - panel_height) // 2
+        draw_status_icon(
+            image,
+            (panel_left + 38, panel_top + 38),
+            GamePalette.ERROR,
+            "!",
+        )
         for index, line in enumerate(lines):
             scale = 1.1 if index == 0 else 0.85
             (text_width, _), _ = cv2.getTextSize(
@@ -204,7 +251,7 @@ class OverlayRenderer:
                 ((width - text_width) // 2, height // 2 - 35 + index * 45),
                 cv2.FONT_HERSHEY_DUPLEX,
                 scale,
-                (255, 255, 255),
+                GamePalette.TEXT if index == 0 else GamePalette.MUTED_TEXT,
                 2,
                 cv2.LINE_AA,
             )

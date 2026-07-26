@@ -1,15 +1,22 @@
-﻿from model.board import Board
+from model.board import Board
 from model.position import Position
 from model.piece_mapper import PieceMapper
 
 
 class TextBoardFormatter:
-    """
-    Converts a Board object into its textual representation.
-    """
+    """Converts a Board object into its textual representation.
+
+    מייצגת את רכיב השרת ``TextBoardFormatter`` ומרכזת את התנהגותו.
+
+    Responsibility: Converts a Board object into its textual representation.
+
+    אחריות: מייצגת את רכיב השרת ``TextBoardFormatter`` ומרכזת את התנהגותו."""
 
     @staticmethod
     def format(board: Board) -> str:
+        """Perform the format operation.
+
+        מבצעת את פעולת ``format``."""
         lines = []
 
         for row in range(board.height):

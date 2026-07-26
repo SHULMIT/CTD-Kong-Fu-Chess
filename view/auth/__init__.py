@@ -1,4 +1,5 @@
-"""Desktop authentication views."""
-from view.auth.multiplayer_menu_window import MultiplayerMenuWindow
+"""Desktop authentication views.
 
-__all__ = ["MultiplayerMenuWindow"]
+Concrete windows are imported from their modules so importing one view does not
+eagerly initialize the networking dependency graph.
+"""

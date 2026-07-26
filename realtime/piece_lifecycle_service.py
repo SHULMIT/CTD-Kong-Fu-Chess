@@ -10,11 +10,15 @@ from realtime.motion_manager import MotionManager
 
 
 class PieceLifecycleService:
-    """
-    Central place for capture, promotion, and resolution flags.
+    """Central place for capture, promotion, and resolution flags.
 
-    The service keeps rule outcomes consistent regardless of who triggers them.
-    """
+        The service keeps rule outcomes consistent regardless of who triggers them.
+
+    מייצגת את רכיב השרת ``PieceLifecycleService`` ומרכזת את התנהגותו.
+
+    Responsibility: Central place for capture, promotion, and resolution flags.
+
+    אחריות: מייצגת את רכיב השרת ``PieceLifecycleService`` ומרכזת את התנהגותו."""
 
     def __init__(
         self,
@@ -22,6 +26,9 @@ class PieceLifecycleService:
         motion_manager: MotionManager,
         airborne_manager: AirborneManager,
     ):
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._board = board
         self._motion_manager = motion_manager
         self._airborne_manager = airborne_manager
@@ -30,20 +37,23 @@ class PieceLifecycleService:
 
     @property
     def last_captured_piece(self) -> Piece | None:
+        """Perform the last captured piece operation.
+
+        מבצעת את פעולת ``last`` ``captured`` הכלי."""
         return self._last_captured_piece
 
     def reset_resolution_flags(self) -> None:
-        """
-        Clears one-tick capture metadata before advancing simulation.
-        """
+        """Clears one-tick capture metadata before advancing simulation.
+
+        מאפסת את ``resolution`` ``flags``."""
 
         self._last_captured_piece = None
         self._captured_king_in_last_resolution = False
 
     def consume_captured_king_flag(self) -> bool:
-        """
-        Returns and clears king-capture flag.
-        """
+        """Returns and clears king-capture flag.
+
+        מבצעת את פעולת ``consume`` ``captured`` ``king`` ``flag``."""
 
         captured_king = self._captured_king_in_last_resolution
         self._captured_king_in_last_resolution = False
@@ -54,9 +64,9 @@ class PieceLifecycleService:
         piece: Piece,
         position: Position,
     ) -> None:
-        """
-        Marks piece as captured and removes it from active systems.
-        """
+        """Marks piece as captured and removes it from active systems.
+
+        מבצעת את פעולת ``capture`` הכלי."""
 
         self._last_captured_piece = piece
         piece.state = PieceState.CAPTURED
@@ -79,9 +89,9 @@ class PieceLifecycleService:
         self,
         piece: Piece,
     ) -> None:
-        """
-        Applies end-of-motion state transitions for the moving piece.
-        """
+        """Applies end-of-motion state transitions for the moving piece.
+
+        מבצעת את פעולת ``finalize`` ``finished`` התנועה הכלי."""
 
         piece.state = PieceState.IDLE
         self._handle_promotion(piece)
@@ -90,12 +100,12 @@ class PieceLifecycleService:
         self,
         piece: Piece,
     ) -> None:
-        """
-        Finishes an airborne piece.
+        """Finishes an airborne piece.
 
-        If another piece occupies the landing square,
-        both pieces are captured.
-        """
+                If another piece occupies the landing square,
+                both pieces are captured.
+
+        מבצעת את פעולת ``land`` הכלי."""
 
         piece_on_square = self._board.get_piece(
             piece.position
@@ -123,9 +133,9 @@ class PieceLifecycleService:
         self,
         piece: Piece,
     ) -> None:
-        """
-        Promotes pawn that reached last rank.
-        """
+        """Promotes pawn that reached last rank.
+
+        מטפלת ב ``promotion``."""
 
         if piece.type != PieceType.PAWN:
             return

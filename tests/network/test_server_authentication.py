@@ -120,3 +120,71 @@ def test_unauthenticated_game_command_is_rejected(tmp_path) -> None:
         assert server.game_engine.get_motions() == ()
 
     asyncio.run(scenario())
+
+
+def test_authenticated_connection_cannot_replace_its_identity(tmp_path) -> None:
+    async def scenario() -> None:
+        server = _authenticated_server(tmp_path)
+        connection = FakeConnection()
+        service = server._authentication_service
+        assert service is not None
+        first = service.register("FirstPlayer", "password123")
+        service.register("SecondPlayer", "password456")
+
+        await server.handle_message(
+            connection,
+            json.dumps(
+                {
+                    "type": "login",
+                    "username": "FirstPlayer",
+                    "password": "password123",
+                }
+            ),
+        )
+        await connection.receive()
+
+        await server.handle_message(
+            connection,
+            json.dumps(
+                {
+                    "type": "login",
+                    "username": "SecondPlayer",
+                    "password": "password456",
+                }
+            ),
+        )
+
+        assert await connection.receive() == {"type": "already_authenticated"}
+        assert server._authenticated_users[connection] == first
+
+    asyncio.run(scenario())
+
+
+def test_failed_login_for_unknown_username_can_be_followed_by_registration(
+    tmp_path,
+) -> None:
+    async def scenario() -> None:
+        server = _authenticated_server(tmp_path)
+        connection = FakeConnection()
+        credentials = {
+            "username": "NewPlayer",
+            "password": "password123",
+        }
+
+        await server.handle_message(
+            connection,
+            json.dumps({"type": "login", **credentials}),
+        )
+        await server.handle_message(
+            connection,
+            json.dumps({"type": "register", **credentials}),
+        )
+
+        assert await connection.receive() == {"type": "invalid_credentials"}
+        assert await connection.receive() == {
+            "type": "registration_success",
+            "username": "NewPlayer",
+            "rating": 1200,
+        }
+
+    asyncio.run(scenario())

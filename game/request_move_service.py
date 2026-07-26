@@ -24,11 +24,15 @@ from rules.rule_engine import RuleEngine
 
 
 class RequestMoveService:
-    """
-    Owns a single responsibility: process legal move requests.
+    """Owns a single responsibility: process legal move requests.
 
-    This service does not know about game-over lifecycle decisions.
-    """
+        This service does not know about game-over lifecycle decisions.
+
+    מייצגת את רכיב השרת ``RequestMoveService`` ומרכזת את התנהגותו.
+
+    Responsibility: Owns a single responsibility: process legal move requests.
+
+    אחריות: מייצגת את רכיב השרת ``RequestMoveService`` ומרכזת את התנהגותו."""
 
     def __init__(
         self,
@@ -39,6 +43,9 @@ class RequestMoveService:
         player_activity: PlayerActivityService | None = None,
         event_bus: EventBus | None = None,
     ):
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._board = board
         self._rule_engine = rule_engine
         self._arbiter = arbiter
@@ -50,9 +57,9 @@ class RequestMoveService:
         self,
         source: Position,
     ) -> set[Position]:
-        """
-        Returns all legal destination positions for the piece at source.
-        """
+        """Returns all legal destination positions for the piece at source.
+
+        מחזירה את ``legal`` המהלכים."""
         from model.piece import Piece
         piece = self._board.get_piece(source)
         if not isinstance(piece, Piece):
@@ -64,9 +71,9 @@ class RequestMoveService:
         source: Position,
         target: Position,
     ) -> MoveResult:
-        """
-        Validates and schedules a move.
-        """
+        """Validates and schedules a move.
+
+        מבקשת את המהלך."""
 
         validation = self._rule_engine.validate_move(
             self._board,

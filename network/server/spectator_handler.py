@@ -14,7 +14,13 @@ from spectators.spectator_service import SpectatableGame, SpectatorService
 
 
 class SpectatorHandler:
-    """Lists games and manages read-only viewer membership and notifications."""
+    """Lists games and manages read-only viewer membership and notifications.
+
+    מציג משחקים ומנהל חברות והתראות של צופים לקריאה בלבד.
+
+    Responsibility: Lists games and manages read-only viewer membership and notifications.
+
+    אחריות: מציג משחקים ומנהל חברות והתראות של צופים לקריאה בלבד."""
 
     def __init__(
         self,
@@ -29,6 +35,9 @@ class SpectatorHandler:
         profile_provider: Callable[[], list[JsonValue]],
         logger: logging.Logger,
     ) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self.service = spectators
         self._matchmaking = matchmaking
         self._rooms = rooms
@@ -41,6 +50,9 @@ class SpectatorHandler:
         self._logger = logger
 
     async def list_games(self, connection: MessageConnection) -> None:
+        """Send the client a list of games available to spectate.
+
+        שולחת ללקוח רשימת משחקים הזמינים לצפייה."""
         games: list[JsonValue] = []
         for game in self.service.list_games():
             games.append(
@@ -55,18 +67,27 @@ class SpectatorHandler:
         )
 
     def register_game(self, game: SpectatableGame) -> None:
-        """Register one authoritative game for discovery."""
+        """Register one authoritative game for discovery.
+
+        רושמת משחק סמכותי אחד כדי שניתן יהיה לגלות אותו לצפייה."""
         self.service.register_game(game)
 
     def leave(self, connection: object) -> str | None:
-        """Remove a spectator connection and return its former game ID."""
+        """Remove a spectator connection and return its former game ID.
+
+        מסירה חיבור של צופה ומחזירה את מזהה המשחק הקודם שלו."""
         return self.service.leave(connection)
 
     def spectators_for(self, game_id: str) -> tuple[object, ...]:
-        """Return the current viewers for one game."""
+        """Return the current viewers for one game.
+
+        מחזירה את הצופים הנוכחיים של משחק אחד."""
         return self.service.spectators_for(game_id)
 
     async def start(self, connection: MessageConnection, game_id: object) -> None:
+        """Start spectating the requested game.
+
+        מתחילה צפייה במשחק המבוקש."""
         if not self._can_start(connection):
             await self._error(connection, "invalid_state")
             return
@@ -89,6 +110,9 @@ class SpectatorHandler:
         )
 
     async def stop(self, connection: MessageConnection) -> None:
+        """Stop the client's active spectator session.
+
+        מסיימת את מפגש הצפייה הפעיל של הלקוח."""
         game_id = self.service.leave(connection)
         if game_id is None:
             await self._error(connection, "invalid_state")
@@ -97,12 +121,18 @@ class SpectatorHandler:
         self._log("spectator_left", game_id=game_id)
 
     async def close_game(self, game_id: str) -> None:
+        """Close every spectator session for a completed game.
+
+        סוגרת את מפגשי הצפייה של משחק שהסתיים."""
         for spectator in self.service.close_game(game_id):
             await self._messenger.send(
                 spectator, {"type": "spectating_stopped", "reason": "game_ended"}
             )
 
     def _can_start(self, connection: object) -> bool:
+        """Return whether the client may start spectating the game.
+
+        בודקת אם הלקוח רשאי להתחיל לצפות במשחק."""
         return (
             self._matchmaking.state_for(connection) is MatchmakingState.IDLE
             and not self._rooms.contains(connection)
@@ -112,10 +142,16 @@ class SpectatorHandler:
         )
 
     async def _error(self, connection: MessageConnection, reason: str) -> None:
+        """Send a spectator request error to the client.
+
+        שולחת ללקוח שגיאה הקשורה לבקשת צפייה."""
         await self._messenger.send(
             connection, {"type": "spectator_error", "reason": reason}
         )
 
     def _log(self, event_type: str, **context: object) -> None:
+        """Write a structured server event to the configured logger.
+
+        כותבת אירוע שרת מובנה ללוגר שהוגדר."""
         safe = {key: value for key, value in context.items() if value is not None}
         self._logger.info(event_type, extra={"event_type": event_type, **safe})

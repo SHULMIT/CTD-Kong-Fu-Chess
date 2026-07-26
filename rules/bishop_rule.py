@@ -1,4 +1,4 @@
-﻿"""
+"""
 Movement rule for the bishop.
 """
 
@@ -14,9 +14,13 @@ from rules.movement_utils import (
 
 
 class BishopRule(MovementRule):
-    """
-    Calculates all legal bishop moves.
-    """
+    """Calculates all legal bishop moves.
+
+    מייצגת את רכיב השרת ``BishopRule`` ומרכזת את התנהגותו.
+
+    Responsibility: Calculates all legal bishop moves.
+
+    אחריות: מייצגת את רכיב השרת ``BishopRule`` ומרכזת את התנהגותו."""
 
     def get_legal_moves(
         self,
@@ -24,6 +28,9 @@ class BishopRule(MovementRule):
         board: Board,
     ) -> set[Position]:
 
+        """Return legal moves.
+
+        מחזירה את ``legal`` המהלכים."""
         legal_moves = set()
 
         for row_step, column_step in DIAGONAL_DIRECTIONS:

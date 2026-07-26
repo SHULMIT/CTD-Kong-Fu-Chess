@@ -8,9 +8,13 @@ from model.position import Position
 
 
 class DurationCalculator:
-    """
-    Calculates movement duration for already-validated moves.
-    """
+    """Calculates movement duration for already-validated moves.
+
+    מייצגת את רכיב השרת ``DurationCalculator`` ומרכזת את התנהגותו.
+
+    Responsibility: Calculates movement duration for already-validated moves.
+
+    אחריות: מייצגת את רכיב השרת ``DurationCalculator`` ומרכזת את התנהגותו."""
 
     def calculate(
         self,
@@ -18,9 +22,9 @@ class DurationCalculator:
         source: Position,
         target: Position,
     ) -> int:
-        """
-        Returns movement duration in milliseconds.
-        """
+        """Returns movement duration in milliseconds.
+
+        מבצעת את פעולת ``calculate``."""
 
         if piece.type == PieceType.KNIGHT:
             distance_in_cells = 1

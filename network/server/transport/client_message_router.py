@@ -17,7 +17,13 @@ from network.server.spectator_handler import SpectatorHandler
 
 
 class ClientMessageRouter:
-    """Routes decoded intent after high-level authentication and role checks."""
+    """Routes decoded intent after high-level authentication and role checks.
+
+    מנתבת כוונת לקוח מפוענחת לאחר בדיקות אימות ותפקיד ברמה גבוהה.
+
+    Responsibility: Routes decoded intent after high-level authentication and role checks.
+
+    אחריות: מנתבת כוונת לקוח מפוענחת לאחר בדיקות אימות ותפקיד ברמה גבוהה."""
 
     def __init__(
         self,
@@ -33,6 +39,9 @@ class ClientMessageRouter:
         broadcast_snapshot: Callable[[], Awaitable[None]],
         logger: logging.Logger,
     ) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._authentication = authentication
         self._lobby = lobby
         self._spectators = spectators
@@ -50,7 +59,9 @@ class ClientMessageRouter:
         connection: MessageConnection,
         raw_message: str | bytes,
     ) -> None:
-        """Decode one message, enforce its access tier, and delegate it."""
+        """Decode one message, enforce its access tier, and delegate it.
+
+        מפענחת הודעה, אוכפת את רמת הגישה שלה ומעבירה אותה לרכיב המתאים."""
         try:
             message = self.decode(raw_message)
         except json.JSONDecodeError:
@@ -119,6 +130,9 @@ class ClientMessageRouter:
         connection: MessageConnection,
         message: dict[str, object],
     ) -> None:
+        """Execute a parsed command against the active game.
+
+        מבצעת פקודה מפוענחת מול המשחק הפעיל."""
         try:
             command = self._parser.parse(message)
         except CommandParseError:
@@ -137,6 +151,9 @@ class ClientMessageRouter:
 
     @staticmethod
     def decode(raw_message: str | bytes) -> dict[str, object]:
+        """Decode a JSON message into a transport mapping.
+
+        מפענחת הודעת JSON למיפוי תעבורה."""
         decoded = json.loads(raw_message)
         if not isinstance(decoded, dict):
             raise CommandParseError("Command JSON must contain an object.")

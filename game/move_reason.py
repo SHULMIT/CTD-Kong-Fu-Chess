@@ -4,7 +4,13 @@ from enum import Enum
 
 
 class MoveReason(Enum):
-    """Machine-readable outcomes for move validation and game requests."""
+    """Machine-readable outcomes for move validation and game requests.
+
+    מייצגת את רכיב השרת ``MoveReason`` ומרכזת את התנהגותו.
+
+    Responsibility: Machine-readable outcomes for move validation and game requests.
+
+    אחריות: מייצגת את רכיב השרת ``MoveReason`` ומרכזת את התנהגותו."""
 
     OK = "ok"
     GAME_OVER = "game_over"

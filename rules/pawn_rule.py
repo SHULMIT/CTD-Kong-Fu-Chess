@@ -1,4 +1,4 @@
-﻿"""
+"""
 Movement rule for the pawn.
 """
 
@@ -14,9 +14,13 @@ from rules.movement_utils import (
 
 
 class PawnRule(MovementRule):
-    """
-    Calculates every legal move for a pawn.
-    """
+    """Calculates every legal move for a pawn.
+
+    מייצגת את רכיב השרת ``PawnRule`` ומרכזת את התנהגותו.
+
+    Responsibility: Calculates every legal move for a pawn.
+
+    אחריות: מייצגת את רכיב השרת ``PawnRule`` ומרכזת את התנהגותו."""
 
     SINGLE_STEP = 1
     DOUBLE_STEP = 2
@@ -29,9 +33,9 @@ class PawnRule(MovementRule):
         piece: Piece,
         board: Board,
     ) -> set[Position]:
-        """
-        Returns every legal destination for the pawn.
-        """
+        """Returns every legal destination for the pawn.
+
+        מחזירה את ``legal`` המהלכים."""
 
         legal_moves = set()
 
@@ -66,9 +70,9 @@ class PawnRule(MovementRule):
         self,
         piece: Piece,
     ) -> int:
-        """
-        Returns the pawn movement direction.
-        """
+        """Returns the pawn movement direction.
+
+        מזיזה את ``direction``."""
 
         if piece.color == PieceColor.WHITE:
             return self.WHITE_DIRECTION
@@ -80,9 +84,9 @@ class PawnRule(MovementRule):
         piece: Piece,
         board: Board,
     ) -> int:
-        """
-        Returns the pawn starting row.
-        """
+        """Returns the pawn starting row.
+
+        מבצעת את פעולת ``starting`` ``row``."""
 
         if piece.color == PieceColor.WHITE:
             return board.height - 2
@@ -96,9 +100,9 @@ class PawnRule(MovementRule):
         direction: int,
         legal_moves: set[Position],
     ):
-        """
-        Adds the single forward move if legal.
-        """
+        """Adds the single forward move if legal.
+
+        מוסיפה את ``forward`` המהלך."""
 
         position = piece.position.offset(direction, 0)
 
@@ -116,9 +120,9 @@ class PawnRule(MovementRule):
         start_row: int,
         legal_moves: set[Position],
     ):
-        """
-        Adds the double forward move if legal.
-        """
+        """Adds the double forward move if legal.
+
+        מוסיפה את ``double`` המהלך."""
 
         if piece.position.row != start_row:
             return
@@ -146,9 +150,9 @@ class PawnRule(MovementRule):
         direction: int,
         legal_moves: set[Position],
     ):
-        """
-        Adds every legal diagonal capture.
-        """
+        """Adds every legal diagonal capture.
+
+        מוסיפה את ``diagonal`` ``captures``."""
 
         for column_offset in (-1, 1):
 

@@ -15,7 +15,13 @@ _STANDARD_RECORD_KEYS = set(logging.makeLogRecord({}).__dict__)
 
 
 class SensitiveDataFilter(logging.Filter):
-    """Redact sensitive mapping values before any handler formats a record."""
+    """Redact sensitive mapping values before any handler formats a record.
+
+    מטשטשת ערכים רגישים במיפוי לפני שכל handler מעצב רשומת לוג.
+
+    Responsibility: Redact sensitive mapping values before any handler formats a record.
+
+    אחריות: מטשטשת ערכים רגישים במיפוי לפני שכל handler מעצב רשומת לוג."""
 
     REDACTED = "[REDACTED]"
     _INLINE_SECRET = re.compile(
@@ -23,6 +29,9 @@ class SensitiveDataFilter(logging.Filter):
     )
 
     def filter(self, record: logging.LogRecord) -> bool:
+        """Sanitize the log record before it reaches a handler.
+
+        מסננת מידע רגיש מרשומת לוג לפני העברתה ל-handler."""
         record.msg = self._sanitize(record.msg)
         record.args = self._sanitize(record.args)
         for key, value in tuple(record.__dict__.items()):
@@ -34,6 +43,9 @@ class SensitiveDataFilter(logging.Filter):
 
     @classmethod
     def _sanitize(cls, value: Any) -> Any:
+        """Return a copy of the value with sensitive data redacted.
+
+        מחזירה עותק של הערך שבו מידע רגיש הושחר."""
         if isinstance(value, dict):
             return {
                 key: cls.REDACTED if cls._is_sensitive(str(key)) else cls._sanitize(item)
@@ -52,14 +64,26 @@ class SensitiveDataFilter(logging.Filter):
 
     @staticmethod
     def _is_sensitive(key: str) -> bool:
+        """Return whether a mapping key identifies sensitive data.
+
+        בודקת אם מפתח במיפוי מזהה מידע רגיש."""
         normalized = key.lower()
         return any(fragment in normalized for fragment in _SENSITIVE_FRAGMENTS)
 
 
 class StructuredJsonFormatter(logging.Formatter):
-    """Render each server record as one machine-readable JSON object."""
+    """Render each server record as one machine-readable JSON object.
+
+    מעצבת כל רשומת שרת כאובייקט JSON אחד הניתן לקריאה ממכונה.
+
+    Responsibility: Render each server record as one machine-readable JSON object.
+
+    אחריות: מעצבת כל רשומת שרת כאובייקט JSON אחד הניתן לקריאה ממכונה."""
 
     def format(self, record: logging.LogRecord) -> str:
+        """Format the log record as structured JSON.
+
+        מעצבת רשומת לוג כמבנה JSON."""
         payload: dict[str, Any] = {
             "timestamp": self.formatTime(record, "%Y-%m-%dT%H:%M:%S%z"),
             "level": record.levelname,
@@ -82,7 +106,9 @@ def configure_server_logging(
     max_bytes: int = 2_000_000,
     backup_count: int = 5,
 ) -> logging.Logger:
-    """Configure console and rotating-file handlers for the server namespace."""
+    """Configure console and rotating-file handlers for the server namespace.
+
+    מגדירה handlers לקונסולה ולקובץ מתחלף עבור מרחב השמות של השרת."""
     numeric_level = getattr(logging, level.upper(), None)
     if not isinstance(numeric_level, int):
         raise ValueError(f"Unknown log level: {level}")

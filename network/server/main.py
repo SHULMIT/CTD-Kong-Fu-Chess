@@ -15,7 +15,9 @@ from rating.persistent_rating_service import PersistentRatingService
 
 
 def main(arguments: Sequence[str] | None = None) -> None:
-    """Parse local server options and run one authoritative game."""
+    """Parse local server options and run one authoritative game.
+
+    מפרשת אפשרויות שרת מקומיות ומריצה משחק סמכותי אחד."""
     parser = argparse.ArgumentParser(description="Run the Kung Fu Chess server.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8765, type=int)

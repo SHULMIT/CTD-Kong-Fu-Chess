@@ -1,4 +1,4 @@
-﻿"""
+"""
 Movement rule for the knight.
 """
 
@@ -26,9 +26,13 @@ KNIGHT_OFFSETS = (
 
 
 class KnightRule(MovementRule):
-    """
-    Calculates all legal knight moves.
-    """
+    """Calculates all legal knight moves.
+
+    מייצגת את רכיב השרת ``KnightRule`` ומרכזת את התנהגותו.
+
+    Responsibility: Calculates all legal knight moves.
+
+    אחריות: מייצגת את רכיב השרת ``KnightRule`` ומרכזת את התנהגותו."""
 
     def get_legal_moves(
         self,
@@ -36,6 +40,9 @@ class KnightRule(MovementRule):
         board: Board,
     ) -> set[Position]:
 
+        """Return legal moves.
+
+        מחזירה את ``legal`` המהלכים."""
         legal_moves = set()
 
         for row_offset, column_offset in KNIGHT_OFFSETS:

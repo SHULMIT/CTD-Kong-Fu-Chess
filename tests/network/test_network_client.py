@@ -178,3 +178,20 @@ def test_client_registration_and_login_capture_profile_and_snapshot() -> None:
         client.disconnect()
         server.shutdown()
         server_thread.join(timeout=2)
+
+
+def test_intentional_disconnect_clears_authenticated_session_state() -> None:
+    client = NetworkClient()
+    client._username = "Player_1"
+    client._rating = 1400
+    client._assigned_color = PieceColor.WHITE
+    client._matchmaking_state = MultiplayerClientState.IN_GAME
+    client._resume_token = "secret-resume-token"
+
+    client.disconnect()
+
+    assert client.username is None
+    assert client.rating is None
+    assert client.assigned_color is None
+    assert client.matchmaking_state is MultiplayerClientState.IDLE
+    assert client._resume_token is None

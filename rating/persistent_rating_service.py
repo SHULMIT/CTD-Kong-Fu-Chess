@@ -9,7 +9,13 @@ from rating.elo_rating_service import EloRatingService
 
 @dataclass(frozen=True)
 class RatingUpdate:
-    """Authoritative user ratings after one persisted game result."""
+    """Authoritative user ratings after one persisted game result.
+
+    מייצגת את רכיב השרת ``RatingUpdate`` ומרכזת את התנהגותו.
+
+    Responsibility: Authoritative user ratings after one persisted game result.
+
+    אחריות: מייצגת את רכיב השרת ``RatingUpdate`` ומרכזת את התנהגותו."""
 
     winner: User
     loser: User
@@ -18,13 +24,22 @@ class RatingUpdate:
 
 
 class PersistentRatingService:
-    """Calculates and atomically persists one decisive result per game ID."""
+    """Calculates and atomically persists one decisive result per game ID.
+
+    מייצגת את רכיב השרת ``PersistentRatingService`` ומרכזת את התנהגותו.
+
+    Responsibility: Calculates and atomically persists one decisive result per game ID.
+
+    אחריות: מייצגת את רכיב השרת ``PersistentRatingService`` ומרכזת את התנהגותו."""
 
     def __init__(
         self,
         repository: UserRepository,
         elo_service: EloRatingService,
     ) -> None:
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._repository = repository
         self._elo_service = elo_service
 
@@ -34,7 +49,9 @@ class PersistentRatingService:
         winner: User,
         loser: User,
     ) -> RatingUpdate | None:
-        """Persist a decisive result, or return ``None`` if already recorded."""
+        """Persist a decisive result, or return ``None`` if already recorded.
+
+        מבצעת את פעולת ``record`` התוצאה."""
         result = self._elo_service.calculate(winner.rating, loser.rating)
         persisted = self._repository.apply_rating_update(
             game_id=game_id,

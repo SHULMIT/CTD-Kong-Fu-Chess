@@ -10,13 +10,17 @@ from game.player_activity_service import PlayerActivityService
 
 
 class CollisionResolver:
-    """
-    Applies the collision policy for one motion step.
+    """Applies the collision policy for one motion step.
 
-    Rules encoded here:
-    - Later enemy arrival captures earlier arrival on same square.
-    - Later friendly arrival gets stuck on previous square.
-    """
+        Rules encoded here:
+        - Later enemy arrival captures earlier arrival on same square.
+        - Later friendly arrival gets stuck on previous square.
+
+    מייצגת את רכיב השרת ``CollisionResolver`` ומרכזת את התנהגותו.
+
+    Responsibility: Applies the collision policy for one motion step.
+
+    אחריות: מייצגת את רכיב השרת ``CollisionResolver`` ומרכזת את התנהגותו."""
 
     def __init__(
         self,
@@ -24,6 +28,9 @@ class CollisionResolver:
         lifecycle: PieceLifecycleService,
         player_activity: PlayerActivityService | None = None,
     ):
+        """Initialize the instance and its dependencies.
+
+        מאתחלת את המופע ואת התלויות שלו."""
         self._board = board
         self._lifecycle = lifecycle
         self._player_activity = player_activity
@@ -32,16 +39,18 @@ class CollisionResolver:
         self,
         player_activity: PlayerActivityService,
     ) -> None:
-        """Sets the score observer for future captures."""
+        """Sets the score observer for future captures.
+
+        מגדירה את השחקן פעילות."""
         self._player_activity = player_activity
 
     def resolve_step(
         self,
         motion: Motion,
     ) -> None:
-        """
-        Resolves one potential cell transition for the given motion.
-        """
+        """Resolves one potential cell transition for the given motion.
+
+        פותרת את ``step``."""
 
         moving_piece = motion.piece
         source_position = motion.current_position

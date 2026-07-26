@@ -11,14 +11,21 @@ from model.position import Position
 
 
 class CommandParser:
-    """Converts validated external message data into domain commands."""
+    """Converts validated external message data into domain commands.
+
+    ממיר נתוני הודעות חיצוניות שאומתו לפקודות של שכבת התחום.
+
+    Responsibility: Converts validated external message data into domain commands.
+
+    אחריות: ממיר נתוני הודעות חיצוניות שאומתו לפקודות של שכבת התחום."""
 
     def parse(self, message: dict[str, object]) -> NetworkCommand:
         """Return the command represented by ``message``.
 
-        This validates only message shape and primitive value types. Chess
-        legality remains the responsibility of the game rules.
-        """
+                This validates only message shape and primitive value types. Chess
+                legality remains the responsibility of the game rules.
+
+        מאמתת וממירה הודעה חיצונית לפקודת רשת."""
         if not isinstance(message, dict):
             raise CommandParseError("Command must be a dictionary.")
 
@@ -35,6 +42,9 @@ class CommandParser:
         raise CommandParseError(f"Unknown command type: {command_type!r}.")
 
     def _parse_move(self, message: dict[str, object]) -> MoveCommand:
+        """Parse a move request into a move command.
+
+        ממירה בקשת תנועה לפקודת תנועה."""
         self._require_fields(message, {"type", "source", "target"})
         return MoveCommand(
             source=self._parse_position(message["source"], "source"),
@@ -42,6 +52,9 @@ class CommandParser:
         )
 
     def _parse_jump(self, message: dict[str, object]) -> JumpCommand:
+        """Parse a jump request into a jump command.
+
+        ממירה בקשת קפיצה לפקודת קפיצה."""
         self._require_fields(message, {"type", "position"})
         return JumpCommand(
             position=self._parse_position(message["position"], "position")
@@ -51,6 +64,9 @@ class CommandParser:
         self,
         message: dict[str, object],
     ) -> LegalMovesCommand:
+        """Parse a legal-moves request into a command.
+
+        ממירה בקשת מהלכים חוקיים לפקודה."""
         self._require_fields(message, {"type", "position"})
         return LegalMovesCommand(
             position=self._parse_position(message["position"], "position")
@@ -61,6 +77,9 @@ class CommandParser:
         message: dict[str, object],
         expected_fields: set[str],
     ) -> None:
+        """Validate that all required message fields are present.
+
+        מוודאת שכל שדות ההודעה הנדרשים קיימים."""
         if not all(isinstance(field, str) for field in message):
             raise CommandParseError("Command field names must be strings.")
 
@@ -77,6 +96,9 @@ class CommandParser:
 
     @staticmethod
     def _parse_position(value: object, field_name: str) -> Position:
+        """Parse a transport value into a board position.
+
+        ממירה ערך תעבורה למיקום על הלוח."""
         if not isinstance(value, dict):
             raise CommandParseError(f"{field_name} must be a dictionary.")
         if not all(isinstance(field, str) for field in value):
