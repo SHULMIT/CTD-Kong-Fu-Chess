@@ -31,6 +31,17 @@ The architecture separates the system into independent services that communicate
 
 # High Level Architecture
 
+The system is deployed on multiple physical or virtual servers (nodes) managed by Kubernetes.
+
+Each node can run multiple Docker containers, and every container hosts one microservice instance.
+
+Kubernetes automatically distributes containers across the available nodes according to CPU usage, memory usage, health status, and current system load.
+
+This architecture combines two scaling strategies:
+
+- Multiple Game Service containers distributed across many machines.
+- Independent microservices that can scale separately according to their own workload.
+
 ```text
                              Clients
                                 │
