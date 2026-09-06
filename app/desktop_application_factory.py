@@ -3,7 +3,7 @@
 from app.game_application import GameApplication
 from app.game_engine_factory import GameEngineFactory
 from controller.controller import Controller
-from view.ui.scene.game_scene_factory import GameSceneFactory
+from view.ui.scene.game_scene_factory import GameSc
 
 
 class DesktopApplicationFactory:
