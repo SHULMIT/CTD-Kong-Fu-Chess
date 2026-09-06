@@ -25,3 +25,5 @@ This fixture is used for webhook and Check Run integration testing.
 
 This directory can be deleted at any time without affecting the Kung Fu
 Chess application - no other file in this repository depends on it.
+
+Permission-update webhook retest.
