@@ -9,6 +9,8 @@ repository imports it, and nothing here changes the behavior of the game
 server, its tests, or its CI. It exists only so the Code Review Agent's
 reviewers have a small, realistic piece of DataNet-style code to analyze.
 
+This fixture is used for webhook and Check Run integration testing.
+
 ## Contents
 
 - `search_client.py` - a small client for a DataNet-style Search Service
