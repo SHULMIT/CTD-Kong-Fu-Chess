@@ -3,6 +3,7 @@ source = .
 omit =
     .venv/*
     tests/*
+    datanet_review_recording/*
 
 [report]
 fail_under = 80
